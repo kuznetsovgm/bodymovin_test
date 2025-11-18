@@ -43,48 +43,81 @@ const STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
     //     color: ColorAnimationType.Rainbow,
     //     name: 'Slide Rainbow',
     // },
-    // {
-    //     transform: TransformAnimationType.ScalePulse,
-    //     color: ColorAnimationType.Rainbow,
-    //     name: 'Scale Rainbow',
-    // },
-    // {
-    //     transform: TransformAnimationType.ScalePulse,
-    //     color: ColorAnimationType.None,
-    //     letterAnimation: LetterAnimationType.Vibrate,
-    //     name: 'Rotate None',
-    // },
-    // {
-    //     transform: TransformAnimationType.Bounce,
-    //     color: ColorAnimationType.Rainbow,
-    //     name: 'Bounce Rainbow',
-    // },
-    // {
-    //     transform: TransformAnimationType.ShakeLoop,
-    //     color: ColorAnimationType.Rainbow,
-    //     name: 'Shake Rainbow',
-    // },
-    // {
-    //     transform: TransformAnimationType.ScalePulse,
-    //     color: ColorAnimationType.Rainbow,
-    //     letterAnimation: LetterAnimationType.TypingFall,
-    //     name: 'Typing Fall Rainbow',
-    // },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.CycleRGB,
-        letterAnimation: LetterAnimationType.Wave,
-        strokeAnimation: ColorAnimationType.Rainbow,
-        pathMorphAnimation: PathMorphAnimationType.None,
-        strokeWidth: 2,
-    },
     {
         transformAnimation: TransformAnimationType.ScalePulse,
         colorAnimation: ColorAnimationType.Rainbow,
         letterAnimation: LetterAnimationType.Wave,
+        strokeAnimation: ColorAnimationType.None,
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.ScalePulse,
+        colorAnimation: ColorAnimationType.None,
+        letterAnimation: LetterAnimationType.Vibrate,
+        strokeAnimation: ColorAnimationType.Static,
+        strokeWidth: 2,
+        strokeColor: [1, 0, 0],
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.ScalePulse,
+        colorAnimation: ColorAnimationType.None,
+        letterAnimation: LetterAnimationType.Vibrate,
+        strokeAnimation: ColorAnimationType.None,
+        strokeWidth: 2,
+        fillColor: [0, 1, 0],
+        strokeColor: [1, 0, 0],
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.ScalePulse,
+        colorAnimation: ColorAnimationType.None,
+        letterAnimation: LetterAnimationType.Vibrate,
+        strokeAnimation: ColorAnimationType.None,
+        fillColor: [0, 1, 0],
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.Bounce,
+        colorAnimation: ColorAnimationType.Rainbow,
+        strokeAnimation: ColorAnimationType.None,
+        fillColor: [1, 1, 1],
+        letterAnimation: LetterAnimationType.None,
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.ShakeLoop,
+        colorAnimation: ColorAnimationType.Rainbow,
+        strokeAnimation: ColorAnimationType.None,
+        fillColor: [1, 1, 1],
+        letterAnimation: LetterAnimationType.None,
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.ScalePulse,
+        colorAnimation: ColorAnimationType.Rainbow,
+        letterAnimation: LetterAnimationType.TypingFall,
+        strokeAnimation: ColorAnimationType.None,
+        fillColor: [1, 1, 1],
+        pathMorphAnimation: PathMorphAnimationType.None
+    },
+    {
+        transformAnimation: TransformAnimationType.ScalePulse,
+        colorAnimation: ColorAnimationType.Static,
+        letterAnimation: LetterAnimationType.Wave,
+        strokeAnimation: ColorAnimationType.Rainbow,
+        pathMorphAnimation: PathMorphAnimationType.None,
+        // fillColor: [0, 0, 0],
+        strokeWidth: 2,
+    },
+    {
+        transformAnimation: TransformAnimationType.ScalePulse,
+        colorAnimation: ColorAnimationType.Static,
+        letterAnimation: LetterAnimationType.Wave,
         strokeAnimation: ColorAnimationType.CycleRGB,
         pathMorphAnimation: PathMorphAnimationType.None,
-        strokeWidth: 80,
+        fillColor: [1, 1, 1],
+        strokeWidth: 2,
     },
     // {
     //     transform: TransformAnimationType.ScalePulse,

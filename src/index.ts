@@ -50,11 +50,11 @@ export enum PathMorphAnimationType {
 
 export interface GenerateStickerOptions {
     text: string;
-    transformAnimation?: TransformAnimationType;
-    colorAnimation?: ColorAnimationType;
-    strokeAnimation?: ColorAnimationType;
-    letterAnimation?: LetterAnimationType;
-    pathMorphAnimation?: PathMorphAnimationType;
+    transformAnimation: TransformAnimationType;
+    colorAnimation: ColorAnimationType;
+    strokeAnimation: ColorAnimationType;
+    letterAnimation: LetterAnimationType;
+    pathMorphAnimation: PathMorphAnimationType;
     fontSize?: number;
     fontPath?: string;
     width?: number;
@@ -126,11 +126,11 @@ export async function generateTextSticker(
 ): Promise<Sticker> {
     const {
         text,
-        transformAnimation = TransformAnimationType.None,
-        colorAnimation = ColorAnimationType.None,
-        strokeAnimation = ColorAnimationType.None,
-        letterAnimation = LetterAnimationType.None,
-        pathMorphAnimation = PathMorphAnimationType.None,
+        transformAnimation,
+        colorAnimation,
+        strokeAnimation,
+        letterAnimation,
+        pathMorphAnimation,
         fontSize = 72,
         fontPath = path.resolve(`./fonts/${FONT}`),
         width = 512,
@@ -139,7 +139,7 @@ export async function generateTextSticker(
         duration = 180,
         strokeWidth = 2,
         strokeColor = [0, 0, 0],
-        fillColor = [1, 1, 1],
+        fillColor,
     } = opts;
     const fontObj = await promisify<opentype.Font>(opentype.load, fontPath);
     const { lines, finalFontSize } = wrapAndScaleText(
@@ -286,13 +286,17 @@ export async function generateTextSticker(
         strokeColor,
         fillColor,
     );
-    if (colorAnimation !== ColorAnimationType.Rainbow && colorAnimation !== ColorAnimationType.None) {
+    if (fillColor && colorAnimation !== ColorAnimationType.Rainbow && colorAnimation !== ColorAnimationType.None) {
         let cix = 1;
         if (colorAnimation === ColorAnimationType.CycleRGB) cix = 2;
         else if (colorAnimation === ColorAnimationType.Pulse) cix = 3;
         else if (colorAnimation === ColorAnimationType.Static) cix = 4;
         const fill = createFill(colorAnimation, duration, 0, cix, fillColor);
         lettersGroup.it.push(fill);
+    }
+    if (strokeAnimation !== ColorAnimationType.None) {
+        const stroke = createStroke(strokeAnimation, duration, strokeWidth, strokeColor, 0, 3);
+        lettersGroup.it.push(stroke);
     }
     layer.shapes.push(lettersGroup);
     sticker.layers!.push(layer);
@@ -311,7 +315,7 @@ function convertTextToShapes(
     canvasHeight: number,
     strokeWidth: number,
     strokeColor: [number, number, number],
-    fillColor: [number, number, number],
+    fillColor: [number, number, number] | undefined,
 ): GroupShapeElement {
     const group: GroupShapeElement = {
         ty: ShapeType.Group,
@@ -342,18 +346,38 @@ function convertTextToShapes(
             const glyph = font.charToGlyph(ch);
             if (!glyph) continue;
             const path = glyph.getPath(0, 0, fontSize);
-            const bez = convertOpentypePathToBezier(path);
-            if (!bez) continue;
+            const contours = convertOpentypePathToBezier(path);
+            if (!contours || contours.length === 0) continue;
             const adv = (glyph.advanceWidth * fontSize) / font.unitsPerEm;
-            const pathShape: PathShape = {
-                ty: ShapeType.Path,
-                ind: letterIndex,
-                hd: false,
-                nm: `letter_${ch}_${letterIndex}`,
-                cix: 100 + letterIndex,
-                bm: 0,
-                ks: { ix: 0, a: 0, k: bez },
-            };
+
+            // Создаём отдельный PathShape для каждого контура
+            const pathShapes: PathShape[] = contours.map((bez, contourIdx) => {
+                const pathShape: PathShape = {
+                    ty: ShapeType.Path,
+                    ind: letterIndex * 100 + contourIdx,
+                    hd: false,
+                    nm: `letter_${ch}_${letterIndex}_contour_${contourIdx}`,
+                    cix: 100 + letterIndex * 10 + contourIdx,
+                    bm: 0,
+                    ks: { ix: 0, a: 0, k: bez },
+                };
+
+                // Path morph animation (independent of transform)
+                const morphSeed = buildLetterSeed(letterIndex, ch.charCodeAt(0)) + contourIdx * 0.1;
+                const morphKeyframes = buildPathMorphKeyframes(
+                    bez,
+                    fontSize,
+                    duration,
+                    pathMorphAnimation,
+                    morphSeed,
+                );
+                if (morphKeyframes) {
+                    pathShape.ks = { ix: 0, a: 1, k: morphKeyframes } as any;
+                }
+
+                return pathShape;
+            });
+
             let transform: TransformShape;
             switch (letterAnimation) {
                 case LetterAnimationType.Vibrate:
@@ -377,30 +401,23 @@ function convertTextToShapes(
                 default:
                     transform = createStaticTransform(letterIndex, x, y);
             }
-            // Path morph animation (independent of transform)
-            const morphSeed = buildLetterSeed(letterIndex, ch.charCodeAt(0));
-            const morphKeyframes = buildPathMorphKeyframes(
-                bez,
-                fontSize,
-                duration,
-                pathMorphAnimation,
-                morphSeed,
-            );
-            if (morphKeyframes) {
-                pathShape.ks = { ix: 0, a: 1, k: morphKeyframes } as any;
-            }
-            const items: any[] = [pathShape];
+
+            const items: any[] = [...pathShapes];
             if (colorAnimation === ColorAnimationType.Rainbow) {
                 const totalLetters = lines.join('').replace(/ /g, '').length;
                 const phase = (totalLetters - 1 - letterIndex) / totalLetters;
+                const color = fillColor || [1, 1, 1];
                 items.push(
-                    createFill(colorAnimation, duration, phase, 500 + letterIndex, fillColor),
+                    createFill(colorAnimation, duration, phase, 500 + letterIndex, color),
+                );
+            } else if (fillColor && colorAnimation === ColorAnimationType.None) {
+                items.push(
+                    createFill(ColorAnimationType.Static, duration, 0, 500 + letterIndex, fillColor),
                 );
             }
-            if (strokeAnimation !== ColorAnimationType.None) {
-                const phase = strokeAnimation === ColorAnimationType.Rainbow
-                    ? (lines.join('').replace(/ /g, '').length - 1 - letterIndex) / lines.join('').replace(/ /g, '').length
-                    : 0;
+            if (strokeAnimation === ColorAnimationType.Rainbow) {
+                const totalLetters = lines.join('').replace(/ /g, '').length;
+                const phase = (totalLetters - 1 - letterIndex) / totalLetters;
                 items.push(
                     createStroke(strokeAnimation, duration, strokeWidth, strokeColor, phase, 600 + letterIndex),
                 );
@@ -604,16 +621,26 @@ function buildPathMorphKeyframes(
     return kf;
 }
 
-function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier | null {
+function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
     const cmds = pathObj.commands;
-    if (!cmds || !cmds.length) return null;
-    const inT: number[][] = [];
-    const outT: number[][] = [];
-    const v: number[][] = [];
+    if (!cmds || !cmds.length) return [];
+
+    const contours: Bezier[] = [];
+    let inT: number[][] = [];
+    let outT: number[][] = [];
+    let v: number[][] = [];
+
     for (let i = 0; i < cmds.length; i++) {
         const c = cmds[i];
         switch (c.type) {
             case 'M':
+                // Если уже есть текущий контур, сохраняем его
+                if (v.length > 0) {
+                    contours.push({ c: true, i: inT, o: outT, v });
+                    inT = [];
+                    outT = [];
+                    v = [];
+                }
                 v.push([c.x, c.y]);
                 inT.push([0, 0]);
                 outT.push([0, 0]);
@@ -646,10 +673,23 @@ function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier | null {
                 break;
             }
             case 'Z':
+                // Закрываем текущий контур
+                if (v.length > 0) {
+                    contours.push({ c: true, i: inT, o: outT, v });
+                    inT = [];
+                    outT = [];
+                    v = [];
+                }
                 break;
         }
     }
-    return { c: true, i: inT, o: outT, v };
+
+    // Сохраняем последний контур, если он не был закрыт командой Z
+    if (v.length > 0) {
+        contours.push({ c: true, i: inT, o: outT, v });
+    }
+
+    return contours;
 }
 function warpHandle(vec: number[], angle: number, scale: number): number[] {
     if (!vec) return [0, 0];
@@ -1075,6 +1115,9 @@ async function init() {
                 text: 'THIS IS A VERY LONG TEXT THAT WILL WRAP AND SCALE TO FIT WITHIN THE STICKER AREA',
                 transformAnimation: TransformAnimationType.ScalePulse,
                 colorAnimation: ColorAnimationType.Rainbow,
+                strokeAnimation: ColorAnimationType.None,
+                letterAnimation: LetterAnimationType.None,
+                pathMorphAnimation: PathMorphAnimationType.None,
             },
         },
         {
@@ -1083,7 +1126,9 @@ async function init() {
                 text: 'HELLO WORLD',
                 transformAnimation: TransformAnimationType.ScalePulse,
                 colorAnimation: ColorAnimationType.Rainbow,
+                strokeAnimation: ColorAnimationType.None,
                 letterAnimation: LetterAnimationType.TypingFall,
+                pathMorphAnimation: PathMorphAnimationType.None,
             },
         },
         {
@@ -1092,7 +1137,9 @@ async function init() {
                 text: 'WAVE LETTERS',
                 transformAnimation: TransformAnimationType.None,
                 colorAnimation: ColorAnimationType.Rainbow,
+                strokeAnimation: ColorAnimationType.None,
                 letterAnimation: LetterAnimationType.Wave,
+                pathMorphAnimation: PathMorphAnimationType.None,
             },
         },
         {
@@ -1101,7 +1148,9 @@ async function init() {
                 text: 'ZIG ZAG',
                 transformAnimation: TransformAnimationType.Vibrate,
                 colorAnimation: ColorAnimationType.Pulse,
+                strokeAnimation: ColorAnimationType.None,
                 letterAnimation: LetterAnimationType.ZigZag,
+                pathMorphAnimation: PathMorphAnimationType.None,
             },
         },
         {
@@ -1110,6 +1159,8 @@ async function init() {
                 text: 'WARP TEXT',
                 transformAnimation: TransformAnimationType.ShakeLoop,
                 colorAnimation: ColorAnimationType.CycleRGB,
+                strokeAnimation: ColorAnimationType.None,
+                letterAnimation: LetterAnimationType.None,
                 pathMorphAnimation: PathMorphAnimationType.WarpAiry,
             },
         },
@@ -1119,6 +1170,9 @@ async function init() {
                 text: 'BZZZZ',
                 transformAnimation: TransformAnimationType.Vibrate,
                 colorAnimation: ColorAnimationType.Pulse,
+                strokeAnimation: ColorAnimationType.None,
+                letterAnimation: LetterAnimationType.None,
+                pathMorphAnimation: PathMorphAnimationType.None,
             },
         },
     ];
