@@ -35,7 +35,7 @@ class StickerCache {
     /**
      * Generate SHA256 hash from sticker configuration
      */
-    private generateConfigHash(config: any): string {
+    generateConfigHash(config: any): string {
         const configString = JSON.stringify(config);
         return crypto.createHash('sha256').update(configString).digest('hex');
     }

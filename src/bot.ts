@@ -58,7 +58,19 @@ if (UPLOAD_CHAT_IDS_ENV.length > 0) {
 
 // Debounce state for inline queries
 const debounceTimers = new Map<string, NodeJS.Timeout>();
-const DEBOUNCE_DELAY = 2000; // 2 second
+
+// Initialize debounce delay from environment variable (if provided)
+const DEBOUNCE_DELAY_ENV = parseInt(process.env.DEBOUNCE_DELAY || '2000', 10);
+if (DEBOUNCE_DELAY_ENV > 0) {
+    stickerConfigManager.getDebounceDelay().then(async (redisDelay) => {
+        if (redisDelay === 2000) { // Default value means not configured
+            console.log(`Initializing debounce delay from environment variable: ${DEBOUNCE_DELAY_ENV}ms`);
+            await stickerConfigManager.setDebounceDelay(DEBOUNCE_DELAY_ENV);
+        }
+    }).catch(err => {
+        console.error('Error initializing debounce delay:', err);
+    });
+}
 
 // Admin user IDs (comma-separated environment variable)
 const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
@@ -225,16 +237,13 @@ async function generateAndCacheStickers(
     const results: InlineQueryResult[] = [];
     for (const { index, fileId } of generationResults) {
         if (fileId) {
-            // Create safe ID without spaces or special chars
-            const safeId = crypto
-                .createHash('md5')
-                .update(`${normalizedText}_${index}`)
-                .digest('hex')
-                .substring(0, 32);
+            // Use config hash as sticker ID (same as cache key)
+            const variant = enabledConfigs[index].config;
+            const configHash = stickerCache.generateConfigHash(variant);
 
             results.push({
                 type: 'sticker',
-                id: safeId,
+                id: configHash,
                 sticker_file_id: fileId,
             } as InlineQueryResultCachedSticker);
         }
@@ -283,15 +292,13 @@ bot.on('inline_query', async (ctx) => {
         const fileId = allCachedFileIds[i];
 
         if (fileId) {
-            const safeId = crypto
-                .createHash('md5')
-                .update(`${normalizedText}_${i}`)
-                .digest('hex')
-                .substring(0, 32);
+            // Use config hash as sticker ID (same as cache key)
+            const config = enabledConfigs[i].config;
+            const configHash = stickerCache.generateConfigHash(config);
 
             cachedResults.push({
                 type: 'sticker',
-                id: safeId,
+                id: configHash,
                 sticker_file_id: fileId,
             } as InlineQueryResultCachedSticker);
         }
@@ -323,6 +330,7 @@ bot.on('inline_query', async (ctx) => {
     }
 
     // Set debounce timer for generation
+    const debounceDelay = await stickerConfigManager.getDebounceDelay();
     const timer = setTimeout(async () => {
         debounceTimers.delete(userId);
 
@@ -361,7 +369,7 @@ bot.on('inline_query', async (ctx) => {
                 }
             }
         }
-    }, DEBOUNCE_DELAY);
+    }, debounceDelay);
 
     debounceTimers.set(userId, timer);
 });
@@ -641,6 +649,64 @@ bot.command('set_upload_chats', async (ctx) => {
     } catch (error) {
         console.error('Error setting upload chat IDs:', error);
         await ctx.reply('❌ Error setting upload chat IDs.');
+    }
+});
+
+// Admin command: Get current debounce delay
+bot.command('get_debounce_delay', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    try {
+        const delay = await stickerConfigManager.getDebounceDelay();
+        await ctx.reply(
+            `⏱️ *Current Debounce Delay*\n\n` +
+            `Delay: \`${delay}ms\` (${(delay / 1000).toFixed(1)}s)\n\n` +
+            `Use /set_debounce_delay <ms> to change it.`,
+            { parse_mode: 'Markdown' }
+        );
+    } catch (error) {
+        console.error('Error getting debounce delay:', error);
+        await ctx.reply('❌ Error getting debounce delay.');
+    }
+});
+
+// Admin command: Set debounce delay
+bot.command('set_debounce_delay', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply(
+            'Usage: /set_debounce_delay <milliseconds>\n\n' +
+            'Example: /set_debounce_delay 2000 (2 seconds)\n' +
+            'Example: /set_debounce_delay 500 (0.5 seconds)'
+        );
+        return;
+    }
+
+    const delayMs = parseInt(args[1], 10);
+
+    if (isNaN(delayMs) || delayMs < 0) {
+        await ctx.reply('❌ Invalid delay value. Please provide a positive number in milliseconds.');
+        return;
+    }
+
+    try {
+        await stickerConfigManager.setDebounceDelay(delayMs);
+        await ctx.reply(
+            `✅ Debounce delay updated!\n\n` +
+            `New delay: \`${delayMs}ms\` (${(delayMs / 1000).toFixed(1)}s)`,
+            { parse_mode: 'Markdown' }
+        );
+    } catch (error) {
+        console.error('Error setting debounce delay:', error);
+        await ctx.reply('❌ Error setting debounce delay.');
     }
 });
 

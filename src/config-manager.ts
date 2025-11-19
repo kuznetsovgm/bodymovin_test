@@ -5,7 +5,9 @@ import { GenerateStickerOptions } from './index';
 const CONFIG_PREFIX = 'config:';
 const CONFIG_ENABLED_SET = 'config:enabled';
 const UPLOAD_CHAT_IDS_KEY = 'config:upload_chat_ids';
+const DEBOUNCE_DELAY_KEY = 'config:debounce_delay';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_DEBOUNCE_DELAY = 2000; // 2 seconds default
 
 /**
  * Sticker configuration manager
@@ -14,6 +16,8 @@ export class StickerConfigManager {
     private redis: Redis;
     private uploadChatIdsCache: string[] | null = null;
     private uploadChatIdsCacheTime: number = 0;
+    private debounceDelayCache: number | null = null;
+    private debounceDelayCacheTime: number = 0;
 
     constructor(redis: Redis) {
         this.redis = redis;
@@ -24,7 +28,7 @@ export class StickerConfigManager {
      */
     private generateConfigId(config: Omit<GenerateStickerOptions, 'text'>): string {
         const configString = JSON.stringify(config);
-        return crypto.createHash('sha256').update(configString).digest('hex').substring(0, 16);
+        return crypto.createHash('sha256').update(configString).digest('hex');
     }
 
     /**
@@ -316,5 +320,66 @@ export class StickerConfigManager {
     clearUploadChatIdsCache(): void {
         this.uploadChatIdsCache = null;
         this.uploadChatIdsCacheTime = 0;
+    }
+
+    /**
+     * Save debounce delay to Redis (in milliseconds)
+     */
+    async setDebounceDelay(delayMs: number): Promise<void> {
+        try {
+            await this.redis.set(DEBOUNCE_DELAY_KEY, delayMs.toString());
+            // Invalidate local cache
+            this.debounceDelayCache = null;
+            this.debounceDelayCacheTime = 0;
+        } catch (error) {
+            console.error('Error saving debounce delay:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get debounce delay with local caching (5 minutes TTL)
+     * Returns delay in milliseconds
+     */
+    async getDebounceDelay(): Promise<number> {
+        try {
+            // Check if cache is valid
+            const now = Date.now();
+            if (this.debounceDelayCache !== null && (now - this.debounceDelayCacheTime < CACHE_TTL_MS)) {
+                return this.debounceDelayCache;
+            }
+
+            // Fetch from Redis
+            const delayStr = await this.redis.get(DEBOUNCE_DELAY_KEY);
+
+            let delay: number;
+            if (!delayStr) {
+                // Use default if not configured
+                delay = DEFAULT_DEBOUNCE_DELAY;
+            } else {
+                delay = parseInt(delayStr, 10);
+                if (isNaN(delay) || delay < 0) {
+                    delay = DEFAULT_DEBOUNCE_DELAY;
+                }
+            }
+
+            // Update cache
+            this.debounceDelayCache = delay;
+            this.debounceDelayCacheTime = now;
+
+            return delay;
+        } catch (error) {
+            console.error('Error getting debounce delay:', error);
+            // Return cached value if available, otherwise default
+            return this.debounceDelayCache ?? DEFAULT_DEBOUNCE_DELAY;
+        }
+    }
+
+    /**
+     * Clear local cache for debounce delay
+     */
+    clearDebounceDelayCache(): void {
+        this.debounceDelayCache = null;
+        this.debounceDelayCacheTime = 0;
     }
 }
