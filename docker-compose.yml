@@ -15,6 +15,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    networks:
+      - bodymovin-net
 
   bot:
     build:
@@ -25,17 +27,137 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      loki:
+        condition: service_started
     environment:
       - REDIS_URL=redis://redis:6379
       - BOT_TOKEN=${BOT_TOKEN}
       - NODE_ENV=production
+      - METRICS_PORT=9090
+      - LOKI_HOST=http://loki:3100
+      - ENABLE_LOKI=true
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ./stickers:/app/stickers
       - ./temp:/app/temp
       - ./public:/app/public
       - ./fonts:/app/fonts
+    ports:
+      - "9095:9090"
     command: node -r dotenv/config ./dist/bot.js
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9090/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - bodymovin-net
+    labels:
+      - "prometheus.scrape=true"
+      - "prometheus.port=9090"
+      - "prometheus.path=/metrics"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bodymovin-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9091:9090"
+    networks:
+      - bodymovin-net
+    depends_on:
+      - bot
+
+  loki:
+    image: grafana/loki:latest
+    container_name: bodymovin-loki
+    restart: unless-stopped
+    user: "0"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - bodymovin-net
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: bodymovin-promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - bodymovin-net
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bodymovin-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - bodymovin-net
+    depends_on:
+      - prometheus
+      - loki
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: bodymovin-redis-exporter
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    ports:
+      - "9121:9121"
+    networks:
+      - bodymovin-net
+    depends_on:
+      - redis
+
+networks:
+  bodymovin-net:
+    driver: bridge
 
 volumes:
   redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  loki-data:
+    driver: local
+  grafana-data:
     driver: local

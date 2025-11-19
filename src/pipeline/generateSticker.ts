@@ -23,7 +23,7 @@ import {
     PathMorphAnimationType,
     TransformAnimationType,
 } from '../domain/types';
-import { writeJsonGz } from '../shared/fs';
+import { writeJsonGz, jsonToGzBuffer } from '../shared/fs';
 import { wrapAndScaleText } from '../layout/wrap';
 import { loadFont } from '../layout/fontLoader';
 import { layoutText } from '../layout/layoutText';
@@ -96,6 +96,10 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
 
 export async function saveStickerToFile(sticker: Sticker, outPath: string) {
     await writeJsonGz(sticker, outPath);
+}
+
+export async function stickerToBuffer(sticker: Sticker): Promise<Buffer> {
+    return await jsonToGzBuffer(sticker);
 }
 
 function buildBaseLayer(width: number, height: number, duration: number) {

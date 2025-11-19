@@ -4,19 +4,16 @@ import {
     InlineQueryResultCachedSticker,
 } from 'telegraf/types';
 import * as crypto from 'crypto';
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import * as http from 'http';
 import {
-    generateSticker,
     TransformAnimationType,
     ColorAnimationType,
-    saveStickerToFile,
+    stickerToBuffer,
     LetterAnimationType,
     PathMorphAnimationType,
     GenerateStickerOptions,
     blendLayerTransform,
 } from './index';
-import { ensureDir } from './shared/fs';
 import {
     additiveColor,
     blendColor,
@@ -26,6 +23,21 @@ import {
 import { blendLetterTransform } from './animations/letter';
 import { stickerCache } from './cache';
 import { StickerConfigManager } from './config-manager';
+import { logger, logError, logInlineQuery, logStickerGeneration, logUpload } from './logger';
+import {
+    register,
+    inlineQueriesTotal,
+    stickersGeneratedTotal,
+    errorsTotal,
+    stickerGenerationDuration,
+    uploadDuration,
+    cacheHitsTotal,
+    cacheMissesTotal,
+    redisConnectionStatus,
+    healthStatus,
+} from './metrics';
+import { StickerWorkerPool } from './worker/worker-pool';
+import { StickerGenerationTask } from './worker/types';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -33,6 +45,39 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
+
+// Worker pool configuration
+const WORKER_POOL_SIZE = parseInt(process.env.WORKER_POOL_SIZE || '0', 10) || undefined;
+const WORKER_QUEUE_SIZE = parseInt(process.env.WORKER_QUEUE_SIZE || '100', 10);
+
+// Initialize worker pool
+const workerPool = new StickerWorkerPool(WORKER_POOL_SIZE, WORKER_QUEUE_SIZE);
+
+// HTTP server for metrics and health checks
+const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9090', 10);
+const metricsServer = http.createServer(async (req, res) => {
+    if (req.url === '/metrics') {
+        res.setHeader('Content-Type', register.contentType);
+        res.end(await register.metrics());
+    } else if (req.url === '/health') {
+        const health = {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+        };
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(health));
+    } else {
+        res.statusCode = 404;
+        res.end('Not Found');
+    }
+});
+
+metricsServer.listen(METRICS_PORT, () => {
+    logger.info(`Metrics server listening on port ${METRICS_PORT}`);
+    logger.info(`Metrics available at http://localhost:${METRICS_PORT}/metrics`);
+    logger.info(`Health check available at http://localhost:${METRICS_PORT}/health`);
+});
 
 // Initialize sticker config manager
 const stickerConfigManager = new StickerConfigManager(stickerCache.getRedis());
@@ -47,12 +92,13 @@ const UPLOAD_CHAT_IDS_ENV = (process.env.UPLOAD_CHAT_IDS || '')
 if (UPLOAD_CHAT_IDS_ENV.length > 0) {
     stickerConfigManager.getUploadChatIds().then(async (redisIds) => {
         if (redisIds.length === 0) {
-            console.log('Initializing upload chat IDs from environment variable...');
+            logger.info('Initializing upload chat IDs from environment variable...');
             await stickerConfigManager.saveUploadChatIds(UPLOAD_CHAT_IDS_ENV);
-            console.log(`✓ Initialized ${UPLOAD_CHAT_IDS_ENV.length} upload chat IDs`);
+            logger.info(`✓ Initialized ${UPLOAD_CHAT_IDS_ENV.length} upload chat IDs`);
         }
     }).catch(err => {
-        console.error('Error initializing upload chat IDs:', err);
+        logger.error('Error initializing upload chat IDs:', err);
+        logError(err as Error, { context: 'upload_chat_ids_init' });
     });
 }
 
@@ -88,13 +134,16 @@ let lastUsedChatIndex = 0;
 
 async function uploadStickerToTelegram(
     ctx: Context,
-    filepath: string,
+    stickerBuffer: Buffer,
 ): Promise<string | null> {
+    const startTime = Date.now();
+
     // Get upload chat IDs from Redis (with local cache)
     const uploadChatIds = await stickerConfigManager.getUploadChatIds();
 
     if (uploadChatIds.length === 0) {
-        console.error('No upload chat IDs configured. Use /set_upload_chats command.');
+        logger.error('No upload chat IDs configured. Use /set_upload_chats command.');
+        errorsTotal.inc({ error_type: 'no_upload_chats' });
         return null;
     }
 
@@ -104,15 +153,22 @@ async function uploadStickerToTelegram(
 
     try {
         const message = await ctx.telegram.sendSticker(chatId, {
-            source: filepath,
+            source: stickerBuffer,
         });
         const fileId = message.sticker?.file_id;
+        const duration = (Date.now() - startTime) / 1000;
+
         if (fileId) {
-            console.log(`Uploaded sticker to chat ${chatId}, file_id: ${fileId}`);
+            uploadDuration.observe(duration);
+            logUpload(fileId, chatId, true, duration);
+            logger.info(`Uploaded sticker to chat ${chatId}, file_id: ${fileId}`);
             return fileId;
         }
     } catch (error) {
-        console.error(`Failed to upload sticker to chat ${chatId}:`, error);
+        const duration = (Date.now() - startTime) / 1000;
+        errorsTotal.inc({ error_type: 'upload_error' });
+        logUpload('', chatId, false, duration, (error as Error).message);
+        logger.error(`Failed to upload sticker to chat ${chatId}:`, error);
     }
     return null;
 }
@@ -128,9 +184,6 @@ async function generateAndCacheStickers(
     }
 
     const normalizedText = text.toUpperCase().trim();
-    const tempDir = path.resolve('./temp');
-
-    await ensureDir(tempDir);
 
     // Load enabled sticker configs from Redis
     const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
@@ -149,8 +202,9 @@ async function generateAndCacheStickers(
     // Fetch all cached file_ids in one batch request
     const cachedFileIds = await stickerCache.getBatch(normalizedText, batchConfigs);
 
-    // Generate stickers in parallel
-    const generationPromises = [];
+    // Prepare tasks for worker pool
+    const tasks: StickerGenerationTask[] = [];
+    const taskIndexMap: Map<string, number> = new Map();
 
     for (let i = offset; i < endIndex; i++) {
         const { config: variant, id: configId } = enabledConfigs[i];
@@ -159,86 +213,105 @@ async function generateAndCacheStickers(
 
         // Generate if not cached
         if (!fileId) {
-            const generationPromise = (async (
-                index: number,
-                variantData: Omit<GenerateStickerOptions, 'text'>,
-                configIdForLog: string,
-            ) => {
-                const id = crypto.randomBytes(8).toString('hex');
-                const filename = `${id}.tgs`;
-                const filepath = path.join(tempDir, filename);
+            cacheMissesTotal.inc({ cache_type: 'sticker' });
 
-                try {
-                    console.log(
-                        `[${index + 1}/${enabledConfigs.length
-                        }] Generating for "${normalizedText}" (config: ${configIdForLog})...`,
-                    );
-                    const sticker = await generateSticker({
-                        text: normalizedText,
-                        fontSize: 72,
-                        frameRate: 60,
-                        duration: 180,
-                        ...variantData,
-                    });
+            const taskId = crypto.randomBytes(8).toString('hex');
+            const task: StickerGenerationTask = {
+                id: taskId,
+                text: normalizedText,
+                variant,
+                configId,
+                index: i,
+            };
 
-                    console.log(
-                        `[${index + 1}/${enabledConfigs.length
-                        }] Saving to ${filename}...`,
-                    );
-                    await saveStickerToFile(sticker, filepath);
+            tasks.push(task);
+            taskIndexMap.set(taskId, i);
 
-                    // Upload to Telegram and get file_id
-                    console.log(
-                        `[${index + 1}/${enabledConfigs.length
-                        }] Uploading to Telegram...`,
-                    );
-                    const uploadedFileId = await uploadStickerToTelegram(ctx, filepath);
-
-                    if (uploadedFileId) {
-                        // Cache to Redis with config as key
-                        await stickerCache.set(normalizedText, variantData, uploadedFileId);
-                        console.log(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
-                        return { index, fileId: uploadedFileId };
-                    } else {
-                        console.error(
-                            `[${index + 1}/${enabledConfigs.length}] ✗ Upload failed`,
-                        );
-                    }
-
-                    // Clean up temp file
-                    try {
-                        await fs.unlink(filepath);
-                    } catch { }
-                } catch (error) {
-                    console.error(
-                        `[${index + 1}/${enabledConfigs.length
-                        }] ✗ Failed to generate for "${normalizedText}":`,
-                        error,
-                    );
-                }
-
-                return { index, fileId: null };
-            })(i, variant, configId);
-
-            generationPromises.push(generationPromise);
-        } else {
-            console.log(
-                `[${i + 1}/${enabledConfigs.length
-                }] Using cached sticker for "${normalizedText}" (config: ${configId})`,
+            logger.info(
+                `[${i + 1}/${enabledConfigs.length}] Queuing task for "${normalizedText}" (config: ${configId})...`,
             );
-            generationPromises.push(Promise.resolve({ index: i, fileId }));
+        } else {
+            cacheHitsTotal.inc({ cache_type: 'sticker' });
+            logger.debug(
+                `[${i + 1}/${enabledConfigs.length}] Using cached sticker for "${normalizedText}" (config: ${configId})`,
+            );
         }
     }
 
-    // Wait for all generations to complete
-    const generationResults = await Promise.all(generationPromises);
-
-    // Build results array
+    // Submit tasks to worker pool and process results
     const results: InlineQueryResult[] = [];
-    for (const { index, fileId } of generationResults) {
+    const resultPromises: Promise<void>[] = [];
+
+    for (const task of tasks) {
+        const promise = (async () => {
+            try {
+                const result = await workerPool.submitTask(task);
+                const index = result.index;
+
+                if (result.success && result.sticker) {
+                    // Convert sticker to buffer
+                    const stickerBuffer = await stickerToBuffer(result.sticker);
+
+                    // Upload to Telegram
+                    const uploadedFileId = await uploadStickerToTelegram(ctx, stickerBuffer);
+                    const animType = (task.variant as any).transform?.type || 'static';
+
+                    if (uploadedFileId) {
+                        // Cache to Redis
+                        await stickerCache.set(normalizedText, task.variant, uploadedFileId);
+
+                        stickerGenerationDuration.observe({ animation_type: animType }, result.duration);
+                        stickersGeneratedTotal.inc({ animation_type: animType, status: 'success' });
+                        logStickerGeneration(animType, normalizedText, true, result.duration);
+                        logger.info(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
+
+                        // Add to results
+                        const variant = enabledConfigs[index].config;
+                        const configHash = stickerCache.generateConfigHash(variant);
+                        results.push({
+                            type: 'sticker',
+                            id: configHash,
+                            sticker_file_id: uploadedFileId,
+                        } as InlineQueryResultCachedSticker);
+                    } else {
+                        stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
+                        errorsTotal.inc({ error_type: 'upload_failed' });
+                        logger.error(`[${index + 1}/${enabledConfigs.length}] ✗ Upload failed`);
+                    }
+                } else {
+                    const animType = (task.variant as any).transform?.type || 'static';
+                    stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
+                    errorsTotal.inc({ error_type: 'generation_error' });
+                    logStickerGeneration(animType, normalizedText, false, result.duration, result.error);
+                    logger.error(
+                        `[${index + 1}/${enabledConfigs.length}] ✗ Failed: ${result.error}`,
+                    );
+                }
+            } catch (error) {
+                const index = task.index;
+                const animType = (task.variant as any).transform?.type || 'static';
+                stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
+                errorsTotal.inc({ error_type: 'worker_error' });
+                logger.error(
+                    `[${index + 1}/${enabledConfigs.length}] ✗ Worker error:`,
+                    error,
+                );
+            }
+        })();
+
+        resultPromises.push(promise);
+    }
+
+    // Wait for all worker tasks to complete
+    await Promise.all(resultPromises);
+
+    // Add cached results
+    for (let i = offset; i < endIndex; i++) {
+        const batchIndex = i - offset;
+        const fileId = cachedFileIds[batchIndex];
+
         if (fileId) {
-            // Use config hash as sticker ID (same as cache key)
-            const variant = enabledConfigs[index].config;
+            const variant = enabledConfigs[i].config;
             const configHash = stickerCache.generateConfigHash(variant);
 
             results.push({
@@ -256,7 +329,9 @@ async function generateAndCacheStickers(
 bot.on('inline_query', async (ctx) => {
     const query = ctx.inlineQuery.query;
     const offset = parseInt(ctx.inlineQuery.offset || '0');
-    console.log(`offset: ${offset}`);
+    const queryStartTime = Date.now();
+
+    logger.debug(`Inline query: offset=${offset}, query="${query}"`);
 
     const userId = ctx.from.id.toString();
     const queryId = ctx.inlineQuery.id;
@@ -269,6 +344,9 @@ bot.on('inline_query', async (ctx) => {
     // No more pages to serve
     if (offset >= enabledCount) {
         await ctx.answerInlineQuery([], { cache_time: 300, next_offset: '' });
+        inlineQueriesTotal.inc({ status: 'empty' });
+        const duration = (Date.now() - queryStartTime) / 1000;
+        logInlineQuery(query, ctx.from.id, true, duration);
         return;
     }
 
@@ -335,7 +413,7 @@ bot.on('inline_query', async (ctx) => {
         debounceTimers.delete(userId);
 
         try {
-            console.log(`Generating stickers for: "${query}" (offset: ${offset})`);
+            logger.info(`Generating stickers for: "${query}" (offset: ${offset})`);
             const results = await generateAndCacheStickers(
                 ctx,
                 query,
@@ -352,7 +430,16 @@ bot.on('inline_query', async (ctx) => {
                 // cache_time: 300, // Cache for 5 minutes
                 next_offset: nextOffset,
             });
+
+            inlineQueriesTotal.inc({ status: 'success' });
+            const duration = (Date.now() - queryStartTime) / 1000;
+            logInlineQuery(query, ctx.from.id, true, duration);
         } catch (error) {
+            inlineQueriesTotal.inc({ status: 'error' });
+            errorsTotal.inc({ error_type: 'inline_query_error' });
+            const duration = (Date.now() - queryStartTime) / 1000;
+            logInlineQuery(query, ctx.from.id, false, duration);
+            logError(error as Error, { context: 'inline_query', query, userId });
             console.error('Error handling inline query:', error);
             // Ignore "query is too old" errors - Telegram already closed the query
             if (
@@ -710,18 +797,55 @@ bot.command('set_debounce_delay', async (ctx) => {
     }
 });
 
-bot.launch();
+// Monitor Redis connection status
+stickerCache.getRedis().on('connect', () => {
+    redisConnectionStatus.set(1);
+    logger.info('Redis connected');
+});
 
-console.log('🤖 Bot started successfully!');
-console.log('Bot username:', bot.botInfo?.username);
-console.log('Press Ctrl+C to stop.');
+stickerCache.getRedis().on('error', (err) => {
+    redisConnectionStatus.set(0);
+    logger.error('Redis error:', err);
+    logError(err, { context: 'redis' });
+});
+
+stickerCache.getRedis().on('close', () => {
+    redisConnectionStatus.set(0);
+    logger.warn('Redis connection closed');
+});
+
+// Initialize worker pool before launching bot
+(async () => {
+    try {
+        logger.info('Initializing worker pool...');
+        await workerPool.initialize();
+        logger.info('Worker pool initialized successfully');
+
+        bot.launch();
+
+        logger.info('🤖 Bot started successfully!');
+        logger.info('Bot username: ' + bot.botInfo?.username);
+    } catch (error) {
+        logger.error('Failed to initialize worker pool:', error);
+        process.exit(1);
+    }
+})();
+logger.info('Press Ctrl+C to stop.');
 
 // Enable graceful stop
 process.once('SIGINT', async () => {
+    logger.info('Received SIGINT, shutting down gracefully...');
+    healthStatus.set(0);
+    await workerPool.shutdown();
     await stickerCache.close();
+    metricsServer.close();
     bot.stop('SIGINT');
 });
 process.once('SIGTERM', async () => {
+    logger.info('Received SIGTERM, shutting down gracefully...');
+    healthStatus.set(0);
+    await workerPool.shutdown();
     await stickerCache.close();
+    metricsServer.close();
     bot.stop('SIGTERM');
 });

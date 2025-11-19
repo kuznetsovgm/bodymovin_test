@@ -77,3 +77,62 @@ src/
 - Telegraf.js
 - OpenType.js
 - Lottie (Bodymovin)
+- Redis (кэширование)
+- Worker Threads (параллельная генерация)
+- Prometheus (метрики)
+- Loki (логи)
+- Grafana (визуализация)
+
+## Переменные окружения
+
+Основные переменные:
+
+- `BOT_TOKEN` - токен Telegram бота (обязательно)
+- `REDIS_HOST` - хост Redis (по умолчанию: localhost)
+- `REDIS_PORT` - порт Redis (по умолчанию: 6379)
+
+Worker pool:
+
+- `WORKER_POOL_SIZE` - количество воркеров для параллельной генерации (по умолчанию: количество CPU)
+- `WORKER_QUEUE_SIZE` - максимальный размер очереди задач (по умолчанию: 100)
+
+Мониторинг:
+
+- `METRICS_PORT` - порт для метрик Prometheus (по умолчанию: 9090)
+
+См. `.env.example` для полного списка переменных.
+
+## Мониторинг
+
+Проект включает полный стек мониторинга. См. [MONITORING.md](./MONITORING.md) для подробностей.
+
+### Быстрый старт с мониторингом:
+
+```bash
+# Запуск всего стека (бот + Redis + Prometheus + Loki + Grafana)
+docker-compose up -d
+
+# Проверка статуса
+docker-compose ps
+
+# Просмотр логов
+docker-compose logs -f bot
+```
+
+### Доступ к сервисам:
+
+- **Grafana:** http://localhost:3000 (admin/admin)
+- **Prometheus:** http://localhost:9091
+- **Bot Metrics:** http://localhost:9095/metrics
+- **Bot Health:** http://localhost:9095/health
+
+### Доступные метрики:
+
+- Inline queries rate и latency
+- Sticker generation duration по типам анимации
+- Cache hit/miss rate
+- Redis connection status
+- Errors rate по типам
+- Memory & CPU usage
+
+См. полный список метрик в [MONITORING.md](./MONITORING.md).

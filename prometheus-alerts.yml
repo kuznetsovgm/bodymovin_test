@@ -1,0 +1,156 @@
+groups:
+  - name: bodymovin_bot_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(bot_errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'High error rate in Bodymovin Bot'
+          description: 'Bot is experiencing more than 1 error per second for the last 5 minutes. Current rate: {{ $value | humanize }}/s'
+
+      # Slow sticker generation
+      - alert: SlowStickerGeneration
+        expr: histogram_quantile(0.95, rate(bot_sticker_generation_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'Slow sticker generation detected'
+          description: '95th percentile of sticker generation time is above 10 seconds: {{ $value | humanize }}s'
+
+      # Very slow sticker generation (critical)
+      - alert: VerySlo wStickerGeneration
+        expr: histogram_quantile(0.95, rate(bot_sticker_generation_duration_seconds_bucket[5m])) > 30
+        for: 3m
+        labels:
+          severity: critical
+          service: bodymovin-bot
+        annotations:
+          summary: 'Critical: Very slow sticker generation'
+          description: '95th percentile of sticker generation time is above 30 seconds: {{ $value | humanize }}s'
+
+      # Redis connection down
+      - alert: RedisConnectionDown
+        expr: bot_redis_connection_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: bodymovin-bot
+        annotations:
+          summary: 'Redis connection lost'
+          description: 'Bot cannot connect to Redis for more than 1 minute'
+
+      # Bot health check failing
+      - alert: BotUnhealthy
+        expr: bot_health_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: bodymovin-bot
+        annotations:
+          summary: 'Bot health check failing'
+          description: 'Bot health status is 0 for more than 2 minutes'
+
+      # Low cache hit rate
+      - alert: LowCacheHitRate
+        expr: |
+          (
+            rate(bot_cache_hits_total{cache_type="sticker"}[10m]) 
+            / 
+            (rate(bot_cache_hits_total{cache_type="sticker"}[10m]) + rate(bot_cache_misses_total{cache_type="sticker"}[10m]))
+          ) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'Low cache hit rate'
+          description: 'Cache hit rate is below 50% for the last 10 minutes: {{ $value | humanizePercentage }}'
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="bodymovin-bot"} > 1073741824
+        for: 5m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'High memory usage'
+          description: 'Bot is using more than 1GB of memory: {{ $value | humanize1024 }}B'
+
+      # Critical memory usage
+      - alert: CriticalMemoryUsage
+        expr: process_resident_memory_bytes{job="bodymovin-bot"} > 2147483648
+        for: 2m
+        labels:
+          severity: critical
+          service: bodymovin-bot
+        annotations:
+          summary: 'Critical memory usage'
+          description: 'Bot is using more than 2GB of memory: {{ $value | humanize1024 }}B'
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total{job="bodymovin-bot"}[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'High CPU usage'
+          description: 'Bot CPU usage is above 80% for the last 10 minutes: {{ $value | humanize }}%'
+
+      # Bot container down
+      - alert: BotContainerDown
+        expr: up{job="bodymovin-bot"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: bodymovin-bot
+        annotations:
+          summary: 'Bot container is down'
+          description: 'Bot container is not responding to health checks'
+
+      # No inline queries (may indicate an issue)
+      - alert: NoInlineQueries
+        expr: rate(bot_inline_queries_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: info
+          service: bodymovin-bot
+        annotations:
+          summary: 'No inline queries received'
+          description: 'Bot has not received any inline queries in the last 30 minutes. This may be normal during low usage periods.'
+
+      # High upload failure rate
+      - alert: HighUploadFailureRate
+        expr: |
+          (
+            rate(bot_stickers_generated_total{status="error"}[5m])
+            /
+            (rate(bot_stickers_generated_total{status="success"}[5m]) + rate(bot_stickers_generated_total{status="error"}[5m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'High sticker upload failure rate'
+          description: 'More than 10% of sticker uploads are failing: {{ $value | humanizePercentage }}'
+
+      # Redis operation errors
+      - alert: RedisOperationErrors
+        expr: rate(bot_redis_operations_total{status="error"}[5m]) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          service: bodymovin-bot
+        annotations:
+          summary: 'Redis operation errors detected'
+          description: 'Redis is experiencing errors at rate: {{ $value | humanize }}/s'

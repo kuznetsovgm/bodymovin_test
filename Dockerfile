@@ -1,6 +1,9 @@
 # Use Node.js LTS version
 FROM node:18-alpine
 
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
 # Set working directory
 WORKDIR /app
 
@@ -9,7 +12,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -20,8 +23,12 @@ RUN npm run build || npx tsc
 # Create necessary directories
 RUN mkdir -p temp stickers public/stickers
 
-# Expose port (if needed for web server)
-EXPOSE 3000
+# Expose metrics port
+EXPOSE 9090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
 
 # Default command - can be overridden in docker-compose
 CMD ["node", "-r", "dotenv/config", "./dist/bot.js"]

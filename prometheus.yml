@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'bodymovin-bot'
+    environment: 'production'
+
+# Alerting configuration (optional - uncomment to enable)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load alerting rules (optional - uncomment to enable)
+# rule_files:
+#   - '/etc/prometheus/prometheus-alerts.yml'
+
+scrape_configs:
+  # Bot metrics
+  - job_name: 'bodymovin-bot'
+    static_configs:
+      - targets: ['bot:9090']
+        labels:
+          service: 'bodymovin-bot'
+
+  # Redis metrics (via redis_exporter if added)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+
+  # Node exporter for system metrics (optional)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'

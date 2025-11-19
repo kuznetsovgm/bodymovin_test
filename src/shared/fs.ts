@@ -13,6 +13,11 @@ export async function writeJsonGz(obj: any, outPath: string) {
     await fs.writeFile(outPath, gz as any);
 }
 
+export async function jsonToGzBuffer(obj: any): Promise<Buffer> {
+    const json = typeof obj === 'string' ? obj : JSON.stringify(obj);
+    return await promisify<Buffer>(zlib.gzip, json);
+}
+
 export async function promisify<T = any>(
     fn: Function,
     ...args: any[]
