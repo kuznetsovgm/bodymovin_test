@@ -24,229 +24,52 @@ import {
     timelineColor,
 } from './animations/composers';
 import { blendLetterTransform } from './animations/letter';
+import { stickerCache } from './cache';
+import { StickerConfigManager } from './config-manager';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
     throw new Error('BOT_TOKEN environment variable is required');
 }
 
-const UPLOAD_CHAT_IDS = (process.env.UPLOAD_CHAT_IDS || '')
+const bot = new Telegraf(BOT_TOKEN);
+
+// Initialize sticker config manager
+const stickerConfigManager = new StickerConfigManager(stickerCache.getRedis());
+
+// Initialize upload chat IDs from environment variable (if provided)
+const UPLOAD_CHAT_IDS_ENV = (process.env.UPLOAD_CHAT_IDS || '')
     .split(',')
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
-if (UPLOAD_CHAT_IDS.length === 0) {
-    throw new Error(
-        'UPLOAD_CHAT_IDS environment variable is required (comma-separated chat IDs)',
-    );
+// Initialize Redis with UPLOAD_CHAT_IDS from env on startup
+if (UPLOAD_CHAT_IDS_ENV.length > 0) {
+    stickerConfigManager.getUploadChatIds().then(async (redisIds) => {
+        if (redisIds.length === 0) {
+            console.log('Initializing upload chat IDs from environment variable...');
+            await stickerConfigManager.saveUploadChatIds(UPLOAD_CHAT_IDS_ENV);
+            console.log(`✓ Initialized ${UPLOAD_CHAT_IDS_ENV.length} upload chat IDs`);
+        }
+    }).catch(err => {
+        console.error('Error initializing upload chat IDs:', err);
+    });
 }
-
-const bot = new Telegraf(BOT_TOKEN);
-
-// Cache uploaded sticker file_ids by text and variant
-const stickerCache = new Map<string, Map<number, string>>();
 
 // Debounce state for inline queries
 const debounceTimers = new Map<string, NodeJS.Timeout>();
 const DEBOUNCE_DELAY = 2000; // 2 second
 
-// Animation combinations for variety
-// Refined, laconic variant set (25) without Warp morphs and without compose in transform/color.
-const STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        strokeAnimations: [{ type: ColorAnimationType.TransparencyPulse }],
-        strokeColor: [1, 0.1, 0.1],
-        strokeWidth: 3,
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.WarpAiry }],
-        fillColor: [1, 1, 1],
-        strokeWidth: 1,
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
-        fillColor: [0.5, 0.5, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        fillColor: [0, 0, 0],
-        strokeColor: [1, 1, 1],
-        strokeWidth: 4,
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        strokeAnimations: [{ type: ColorAnimationType.None }],
-        fillColor: [0.08, 0.08, 0.08],
-        strokeWidth: 2,
-        strokeColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        fillColor: [0.9, 0.95, 1],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [0.95, 0.95, 0.95],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        letterAnimations: [{ type: LetterAnimationType.Rotate }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        fillColor: [1, 0.9, 0.9],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.Vibrate }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        fillColor: [0.85, 1, 0.85],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        fillColor: [0, 0.7, 1],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-        strokeColor: [1, 1, 1],
-        fillColor: [0.2, 0.2, 0.2],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
-        letterAnimations: [{ type: LetterAnimationType.Rotate }],
-        fillColor: [0.95, 0.9, 0.8],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-        fillColor: [0.96, 0.96, 0.96],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        fillColor: [1, 0.9, 0.6],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [0.9, 1, 0.9],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
-        letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        fillColor: [0.9, 0.9, 1],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        strokeAnimations: [{ type: ColorAnimationType.Pulse }],
-        strokeWidth: 2,
-        strokeColor: [0.2, 0.6, 1],
-        fillColor: [0.1, 0.1, 0.1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        letterAnimations: [{ type: LetterAnimationType.Rotate }],
-        fillColor: [0.9, 0.85, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        fillColor: [0.8, 0.95, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        strokeAnimations: [{ type: ColorAnimationType.Pulse }],
-        strokeWidth: 2,
-        strokeColor: [0, 0.5, 1],
-        fillColor: [0.95, 0.95, 0.95],
-        pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [1, 1, 1],
-    },
-    {
-        transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.None }],
-        letterAnimations: [{ type: LetterAnimationType.Wave }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-        strokeColor: [1, 1, 1],
-        fillColor: [0.06, 0.06, 0.06],
-    },
-];
+// Admin user IDs (comma-separated environment variable)
+const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
+    .map((id) => parseInt(id));
+
+function isAdmin(userId: number): boolean {
+    return ADMIN_USER_IDS.includes(userId);
+}
 
 // Store which chat was used last for round-robin distribution
 let lastUsedChatIndex = 0;
@@ -255,9 +78,17 @@ async function uploadStickerToTelegram(
     ctx: Context,
     filepath: string,
 ): Promise<string | null> {
+    // Get upload chat IDs from Redis (with local cache)
+    const uploadChatIds = await stickerConfigManager.getUploadChatIds();
+
+    if (uploadChatIds.length === 0) {
+        console.error('No upload chat IDs configured. Use /set_upload_chats command.');
+        return null;
+    }
+
     // Use round-robin to distribute uploads across chats (avoid rate limits)
-    const chatId = UPLOAD_CHAT_IDS[lastUsedChatIndex];
-    lastUsedChatIndex = (lastUsedChatIndex + 1) % UPLOAD_CHAT_IDS.length;
+    const chatId = uploadChatIds[lastUsedChatIndex];
+    lastUsedChatIndex = (lastUsedChatIndex + 1) % uploadChatIds.length;
 
     try {
         const message = await ctx.telegram.sendSticker(chatId, {
@@ -289,27 +120,37 @@ async function generateAndCacheStickers(
 
     await ensureDir(tempDir);
 
-    // Check cache first
-    if (!stickerCache.has(normalizedText)) {
-        stickerCache.set(normalizedText, new Map());
+    // Load enabled sticker configs from Redis
+    const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
+
+    if (enabledConfigs.length === 0) {
+        console.log('No enabled sticker configurations found in Redis');
+        return [];
     }
-    const textCache = stickerCache.get(normalizedText)!;
 
     // Calculate which stickers to generate for this batch
-    const endIndex = Math.min(offset + limit, STICKER_VARIANTS.length);
+    const endIndex = Math.min(offset + limit, enabledConfigs.length);
+
+    // Get all configs for this batch
+    const batchConfigs = enabledConfigs.slice(offset, endIndex).map(c => c.config);
+
+    // Fetch all cached file_ids in one batch request
+    const cachedFileIds = await stickerCache.getBatch(normalizedText, batchConfigs);
 
     // Generate stickers in parallel
     const generationPromises = [];
 
     for (let i = offset; i < endIndex; i++) {
-        const variant = STICKER_VARIANTS[i];
-        let fileId = textCache.get(i);
+        const { config: variant, id: configId } = enabledConfigs[i];
+        const batchIndex = i - offset;
+        const fileId = cachedFileIds[batchIndex];
 
         // Generate if not cached
         if (!fileId) {
             const generationPromise = (async (
                 index: number,
-                variantData: (typeof STICKER_VARIANTS)[0],
+                variantData: Omit<GenerateStickerOptions, 'text'>,
+                configIdForLog: string,
             ) => {
                 const id = crypto.randomBytes(8).toString('hex');
                 const filename = `${id}.tgs`;
@@ -317,8 +158,8 @@ async function generateAndCacheStickers(
 
                 try {
                     console.log(
-                        `[${index + 1}/${STICKER_VARIANTS.length
-                        }] Generating for "${normalizedText}"...`,
+                        `[${index + 1}/${enabledConfigs.length
+                        }] Generating for "${normalizedText}" (config: ${configIdForLog})...`,
                     );
                     const sticker = await generateSticker({
                         text: normalizedText,
@@ -329,25 +170,26 @@ async function generateAndCacheStickers(
                     });
 
                     console.log(
-                        `[${index + 1}/${STICKER_VARIANTS.length
+                        `[${index + 1}/${enabledConfigs.length
                         }] Saving to ${filename}...`,
                     );
                     await saveStickerToFile(sticker, filepath);
 
                     // Upload to Telegram and get file_id
                     console.log(
-                        `[${index + 1}/${STICKER_VARIANTS.length
+                        `[${index + 1}/${enabledConfigs.length
                         }] Uploading to Telegram...`,
                     );
                     const uploadedFileId = await uploadStickerToTelegram(ctx, filepath);
 
                     if (uploadedFileId) {
-                        textCache.set(index, uploadedFileId);
-                        console.log(`[${index + 1}/${STICKER_VARIANTS.length}] ✓ Success`);
+                        // Cache to Redis with config as key
+                        await stickerCache.set(normalizedText, variantData, uploadedFileId);
+                        console.log(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
                         return { index, fileId: uploadedFileId };
                     } else {
                         console.error(
-                            `[${index + 1}/${STICKER_VARIANTS.length}] ✗ Upload failed`,
+                            `[${index + 1}/${enabledConfigs.length}] ✗ Upload failed`,
                         );
                     }
 
@@ -357,20 +199,20 @@ async function generateAndCacheStickers(
                     } catch { }
                 } catch (error) {
                     console.error(
-                        `[${index + 1}/${STICKER_VARIANTS.length
+                        `[${index + 1}/${enabledConfigs.length
                         }] ✗ Failed to generate for "${normalizedText}":`,
                         error,
                     );
                 }
 
                 return { index, fileId: null };
-            })(i, variant);
+            })(i, variant, configId);
 
             generationPromises.push(generationPromise);
         } else {
             console.log(
-                `[${i + 1}/${STICKER_VARIANTS.length
-                }] Using cached sticker for "${normalizedText}"`,
+                `[${i + 1}/${enabledConfigs.length
+                }] Using cached sticker for "${normalizedText}" (config: ${configId})`,
             );
             generationPromises.push(Promise.resolve({ index: i, fileId }));
         }
@@ -409,10 +251,14 @@ bot.on('inline_query', async (ctx) => {
 
     const userId = ctx.from.id.toString();
     const queryId = ctx.inlineQuery.id;
-    const STICKERS_PER_PAGE = 5;
+    const STICKERS_PER_PAGE_CACHED = 20; // Return 20 stickers per page when cached
+    const STICKERS_PER_PAGE_GENERATE = 5; // Generate only 5 stickers per page
+
+    // Load enabled configs count
+    const enabledCount = await stickerConfigManager.getEnabledCount();
 
     // No more pages to serve
-    if (offset >= STICKER_VARIANTS.length) {
+    if (offset >= enabledCount) {
         await ctx.answerInlineQuery([], { cache_time: 300, next_offset: '' });
         return;
     }
@@ -423,51 +269,56 @@ bot.on('inline_query', async (ctx) => {
         clearTimeout(existingTimer);
     }
 
-    // Answer immediately with cached results if available
+    // Answer immediately with cached results if available from Redis
     const normalizedText = query.toUpperCase().trim();
-    if (stickerCache.has(normalizedText)) {
-        const textCache = stickerCache.get(normalizedText)!;
-        const cachedResults: InlineQueryResult[] = [];
 
-        for (let i = 0; i < STICKER_VARIANTS.length; i++) {
-            const fileId = textCache.get(i);
-            if (fileId) {
-                const safeId = crypto
-                    .createHash('md5')
-                    .update(`${normalizedText}_${i}`)
-                    .digest('hex')
-                    .substring(0, 32);
+    // Try to get cached results for all enabled variants in one batch request
+    const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
+    const allConfigs = enabledConfigs.map(c => c.config);
+    const allCachedFileIds = await stickerCache.getBatch(normalizedText, allConfigs);
 
-                cachedResults.push({
-                    type: 'sticker',
-                    id: safeId,
-                    sticker_file_id: fileId,
-                } as InlineQueryResultCachedSticker);
-            }
+    const cachedResults: InlineQueryResult[] = [];
+
+    for (let i = 0; i < enabledConfigs.length; i++) {
+        const fileId = allCachedFileIds[i];
+
+        if (fileId) {
+            const safeId = crypto
+                .createHash('md5')
+                .update(`${normalizedText}_${i}`)
+                .digest('hex')
+                .substring(0, 32);
+
+            cachedResults.push({
+                type: 'sticker',
+                id: safeId,
+                sticker_file_id: fileId,
+            } as InlineQueryResultCachedSticker);
         }
+    }
 
-        if (cachedResults.length > 0) {
-            try {
-                // If we don't have enough cached results for this offset, fall through to generation
-                if (offset < cachedResults.length) {
-                    const paginatedResults = cachedResults.slice(
-                        offset,
-                        offset + STICKERS_PER_PAGE,
-                    );
-                    const nextOffset =
-                        offset + STICKERS_PER_PAGE < cachedResults.length
-                            ? (offset + STICKERS_PER_PAGE).toString()
-                            : '';
+    if (cachedResults.length > 0) {
+        try {
+            // If we don't have enough cached results for this offset, fall through to generation
+            if (offset < cachedResults.length) {
+                // Return up to 20 cached stickers per page
+                const paginatedResults = cachedResults.slice(
+                    offset,
+                    offset + STICKERS_PER_PAGE_CACHED,
+                );
+                const nextOffset =
+                    offset + STICKERS_PER_PAGE_CACHED < cachedResults.length
+                        ? (offset + STICKERS_PER_PAGE_CACHED).toString()
+                        : '';
 
-                    await ctx.answerInlineQuery(paginatedResults, {
-                        // cache_time: 300,
-                        next_offset: nextOffset,
-                    });
-                    return;
-                }
-            } catch (error) {
-                console.error('Error answering with cached results:', error);
+                await ctx.answerInlineQuery(paginatedResults, {
+                    // cache_time: 300,
+                    next_offset: nextOffset,
+                });
+                return;
             }
+        } catch (error) {
+            console.error('Error answering with cached results:', error);
         }
     }
 
@@ -481,12 +332,12 @@ bot.on('inline_query', async (ctx) => {
                 ctx,
                 query,
                 offset,
-                STICKERS_PER_PAGE,
+                STICKERS_PER_PAGE_GENERATE,
             );
 
             const nextOffset =
-                offset + STICKERS_PER_PAGE < STICKER_VARIANTS.length
-                    ? (offset + STICKERS_PER_PAGE).toString()
+                offset + STICKERS_PER_PAGE_GENERATE < enabledCount
+                    ? (offset + STICKERS_PER_PAGE_GENERATE).toString()
                     : '';
 
             await ctx.answerInlineQuery(results, {
@@ -515,8 +366,10 @@ bot.on('inline_query', async (ctx) => {
     debounceTimers.set(userId, timer);
 });
 
-bot.command('start', (ctx) => {
+bot.command('start', async (ctx) => {
     console.log('Received /start command from user:', ctx.from.id);
+    const enabledCount = await stickerConfigManager.getEnabledCount();
+
     ctx.reply(
         '🎨 *Animated Sticker Bot*\n\n' +
         'Use me in inline mode to create animated text stickers!\n\n' +
@@ -526,13 +379,269 @@ bot.command('start', (ctx) => {
         '` in any chat\n' +
         '2. Enter your text\n' +
         '3. Wait 2 seconds for generation\n' +
-        '4. Choose from 8 different animated styles!\n\n' +
+        `4. Choose from ${enabledCount} different animated styles!\n\n` +
         '✨ Animations include: Rainbow slide, Scale pulse, Rotate, Bounce, Shake, and more!\n\n' +
         'Try it now: `@' +
         ctx.botInfo.username +
         ' Hello`',
         { parse_mode: 'Markdown' },
     );
+});
+
+// Admin command: List all sticker configurations
+bot.command('list_configs', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    try {
+        const configs = await stickerConfigManager.getAllConfigs();
+
+        if (configs.length === 0) {
+            await ctx.reply('📭 No sticker configurations found in Redis.\n\nUse /init_configs to load default configurations.');
+            return;
+        }
+
+        let message = `📋 *Sticker Configurations* (${configs.length} total)\n\n`;
+
+        for (let i = 0; i < configs.length; i++) {
+            const { id, enabled } = configs[i];
+            const status = enabled ? '✅' : '❌';
+            message += `${status} \`${id}\`\n`;
+
+            // Split into multiple messages if too long
+            if (message.length > 3500 && i < configs.length - 1) {
+                await ctx.reply(message, { parse_mode: 'Markdown' });
+                message = '';
+            }
+        }
+
+        if (message) {
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+        }
+
+        const enabledCount = configs.filter(c => c.enabled).length;
+        await ctx.reply(
+            `\n📊 Summary:\n` +
+            `• Total: ${configs.length}\n` +
+            `• Enabled: ${enabledCount}\n` +
+            `• Disabled: ${configs.length - enabledCount}\n\n` +
+            `Use /enable <id> or /disable <id> to manage configurations.`
+        );
+    } catch (error) {
+        console.error('Error listing configs:', error);
+        await ctx.reply('❌ Error listing configurations.');
+    }
+});
+
+// Admin command: Enable a sticker configuration
+bot.command('enable', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply('Usage: /enable <config_id>\n\nUse /list_configs to see available configurations.');
+        return;
+    }
+
+    const configId = args[1];
+
+    try {
+        const success = await stickerConfigManager.enableConfig(configId);
+
+        if (success) {
+            await ctx.reply(`✅ Configuration \`${configId}\` has been enabled.`, { parse_mode: 'Markdown' });
+        } else {
+            await ctx.reply(`❌ Configuration \`${configId}\` not found.`, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Error enabling config:', error);
+        await ctx.reply('❌ Error enabling configuration.');
+    }
+});
+
+// Admin command: Disable a sticker configuration
+bot.command('disable', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply('Usage: /disable <config_id>\n\nUse /list_configs to see available configurations.');
+        return;
+    }
+
+    const configId = args[1];
+
+    try {
+        const success = await stickerConfigManager.disableConfig(configId);
+
+        if (success) {
+            await ctx.reply(`✅ Configuration \`${configId}\` has been disabled.`, { parse_mode: 'Markdown' });
+        } else {
+            await ctx.reply(`❌ Error disabling configuration \`${configId}\`.`, { parse_mode: 'Markdown' });
+        }
+    } catch (error) {
+        console.error('Error disabling config:', error);
+        await ctx.reply('❌ Error disabling configuration.');
+    }
+});
+
+// Admin command: View details of a specific configuration
+bot.command('view_config', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply('Usage: /view_config <config_id>\n\nUse /list_configs to see available configurations.');
+        return;
+    }
+
+    const configId = args[1];
+
+    try {
+        const config = await stickerConfigManager.getConfig(configId);
+
+        if (!config) {
+            await ctx.reply(`❌ Configuration \`${configId}\` not found.`, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        const isEnabled = await stickerConfigManager.isEnabled(configId);
+        const status = isEnabled ? '✅ Enabled' : '❌ Disabled';
+
+        const configJson = JSON.stringify(config, null, 2);
+
+        await ctx.reply(
+            `🔧 *Configuration Details*\n\n` +
+            `ID: \`${configId}\`\n` +
+            `Status: ${status}\n\n` +
+            `\`\`\`json\n${configJson}\n\`\`\``,
+            { parse_mode: 'Markdown' }
+        );
+    } catch (error) {
+        console.error('Error viewing config:', error);
+        await ctx.reply('❌ Error viewing configuration.');
+    }
+});
+
+// Admin command: List upload chat IDs
+bot.command('list_upload_chats', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    try {
+        const chatIds = await stickerConfigManager.getUploadChatIds();
+
+        if (chatIds.length === 0) {
+            await ctx.reply('📭 No upload chat IDs configured.\n\nUse /add_upload_chat <chat_id> to add one.');
+            return;
+        }
+
+        let message = `📋 *Upload Chat IDs* (${chatIds.length} total)\n\n`;
+        chatIds.forEach((id, index) => {
+            message += `${index + 1}. \`${id}\`\n`;
+        });
+
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Error listing upload chat IDs:', error);
+        await ctx.reply('❌ Error listing upload chat IDs.');
+    }
+});
+
+// Admin command: Add upload chat ID
+bot.command('add_upload_chat', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply('Usage: /add_upload_chat <chat_id>\n\nExample: /add_upload_chat 123456789');
+        return;
+    }
+
+    const chatId = args[1];
+
+    try {
+        await stickerConfigManager.addUploadChatId(chatId);
+        await ctx.reply(`✅ Chat ID \`${chatId}\` has been added to upload chats.`, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Error adding upload chat ID:', error);
+        await ctx.reply('❌ Error adding upload chat ID.');
+    }
+});
+
+// Admin command: Remove upload chat ID
+bot.command('remove_upload_chat', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply('Usage: /remove_upload_chat <chat_id>\n\nUse /list_upload_chats to see available chat IDs.');
+        return;
+    }
+
+    const chatId = args[1];
+
+    try {
+        await stickerConfigManager.removeUploadChatId(chatId);
+        await ctx.reply(`✅ Chat ID \`${chatId}\` has been removed from upload chats.`, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Error removing upload chat ID:', error);
+        await ctx.reply('❌ Error removing upload chat ID.');
+    }
+});
+
+// Admin command: Set all upload chat IDs at once
+bot.command('set_upload_chats', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+        await ctx.reply('❌ You are not authorized to use this command.');
+        return;
+    }
+
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        await ctx.reply('Usage: /set_upload_chats <chat_id1,chat_id2,...>\n\nExample: /set_upload_chats 123456789,987654321');
+        return;
+    }
+
+    const chatIdsStr = args.slice(1).join(' ');
+    const chatIds = chatIdsStr.split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+    if (chatIds.length === 0) {
+        await ctx.reply('❌ No valid chat IDs provided.');
+        return;
+    }
+
+    try {
+        await stickerConfigManager.saveUploadChatIds(chatIds);
+        await ctx.reply(
+            `✅ Upload chat IDs updated!\n\n` +
+            `Set ${chatIds.length} chat ID(s):\n` +
+            chatIds.map((id, i) => `${i + 1}. \`${id}\``).join('\n'),
+            { parse_mode: 'Markdown' }
+        );
+    } catch (error) {
+        console.error('Error setting upload chat IDs:', error);
+        await ctx.reply('❌ Error setting upload chat IDs.');
+    }
 });
 
 bot.launch();
@@ -542,5 +651,11 @@ console.log('Bot username:', bot.botInfo?.username);
 console.log('Press Ctrl+C to stop.');
 
 // Enable graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', async () => {
+    await stickerCache.close();
+    bot.stop('SIGINT');
+});
+process.once('SIGTERM', async () => {
+    await stickerCache.close();
+    bot.stop('SIGTERM');
+});

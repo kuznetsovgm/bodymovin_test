@@ -29,13 +29,13 @@ export function layoutText(
             const ch = text[i];
             if (ch === ' ') {
                 const g = font.charToGlyph(ch);
-                if (g) {
+                if (g && g.advanceWidth !== undefined) {
                     x += (g.advanceWidth * fontSize) / font.unitsPerEm;
                 }
                 continue;
             }
             const glyph = font.charToGlyph(ch);
-            if (!glyph) continue;
+            if (!glyph || glyph.advanceWidth === undefined) continue;
             const advance = (glyph.advanceWidth * fontSize) / font.unitsPerEm;
             result.push({
                 char: ch,

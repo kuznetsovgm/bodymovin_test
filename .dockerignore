@@ -1,0 +1,13 @@
+node_modules
+dist
+npm-debug.log
+.env
+.git
+.gitignore
+.vscode
+temp/*
+!temp/.gitkeep
+*.md
+.DS_Store
+stickers/*
+public/*
