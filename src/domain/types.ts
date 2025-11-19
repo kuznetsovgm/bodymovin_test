@@ -19,6 +19,7 @@ export enum ColorAnimationType {
     CycleRGB = 'cycleRGB',
     Pulse = 'pulse',
     Rainbow = 'rainbow',
+    TransparencyPulse = 'transparencyPulse',
 }
 
 export enum LetterAnimationType {

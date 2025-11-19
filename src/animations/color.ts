@@ -33,8 +33,21 @@ export function buildColorTrack(
                 k: buildRawKeyframes(
                     [
                         [...baseColor, 1],
-                        baseColor.map((c) => c * 0.7) as [number, number, number],
+                        [...baseColor.map((c) => c * 0.7) as [number, number, number], 1],
                         [...baseColor, 1],
+                    ],
+                    [0, duration / 2, duration],
+                    true,
+                ),
+            };
+        case ColorAnimationType.TransparencyPulse:
+            return {
+                a: 1,
+                k: buildRawKeyframes(
+                    [
+                        [...baseColor, 0],
+                        [...baseColor, 1],
+                        [...baseColor, 0],
                     ],
                     [0, duration / 2, duration],
                     true,

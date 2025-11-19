@@ -27,6 +27,7 @@ export const colorRegistry: Record<
     [ColorAnimationType.CycleRGB]: (ctx, phase = 0, base = [1, 1, 1]) => buildColorTrack(ColorAnimationType.CycleRGB, ctx, phase, base),
     [ColorAnimationType.Pulse]: (ctx, phase = 0, base = [1, 1, 1]) => buildColorTrack(ColorAnimationType.Pulse, ctx, phase, base),
     [ColorAnimationType.Rainbow]: (ctx, phase = 0, base = [1, 1, 1]) => buildColorTrack(ColorAnimationType.Rainbow, ctx, phase, base),
+    [ColorAnimationType.TransparencyPulse]: (ctx, phase = 0, base = [1, 1, 1]) => buildColorTrack(ColorAnimationType.TransparencyPulse, ctx, phase, base),
 };
 
 export const letterRegistry: Record<LetterAnimationType, (ctx: LetterContext) => ShapeLayer['ks']> = {
