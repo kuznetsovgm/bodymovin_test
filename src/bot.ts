@@ -4,14 +4,18 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import {
-    generateTextSticker,
+    generateSticker,
     TransformAnimationType,
     ColorAnimationType,
     saveStickerToFile,
     LetterAnimationType,
     PathMorphAnimationType,
     GenerateStickerOptions,
+    blendLayerTransform,
 } from './index';
+import { ensureDir } from './shared/fs';
+import { additiveColor, blendColor, blendTransform, timelineColor } from './animations/composers';
+import { blendLetterTransform } from './animations/letter';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -39,146 +43,221 @@ const DEBOUNCE_DELAY = 2000; // 2 second
 // Animation combinations for variety
 const STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
     // {
-    //     transform: TransformAnimationType.SlideLoop,
-    //     color: ColorAnimationType.Rainbow,
-    //     name: 'Slide Rainbow',
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     letterAnimations: [{ type: LetterAnimationType.Wave }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     colorAnimations: [{ type: ColorAnimationType.Pulse }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 0, 0],
+    //     letterAnimations: [
+    //         { type: LetterAnimationType.ZigZag },
+    //         { type: LetterAnimationType.TypingFall, compose: blendLetterTransform(1) },
+    //     ],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
+    //     colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     letterAnimations: [{ type: LetterAnimationType.None }],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.Vibrate }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     strokeWidth: 2,
+    //     fillColor: [0, 1, 0],
+    //     strokeColor: [1, 0, 0],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
+    //     colorAnimations: [{ type: ColorAnimationType.Pulse }],
+    //     letterAnimations: [{ type: LetterAnimationType.TypingFall }],
+    //     strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     strokeWidth: 2,
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.Bounce }],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.None }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
+    //     colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     letterAnimations: [{ type: LetterAnimationType.Wave }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.Bounce }],
+    //     colorAnimations: [{ type: ColorAnimationType.Pulse }],
+    //     letterAnimations: [{ type: LetterAnimationType.Wave }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [0.8, 0.8, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
+    //     colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     letterAnimations: [{ type: LetterAnimationType.Vibrate }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.ZigZag }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [0, 0.8, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
+    // },
+    // {
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     colorAnimations: [{ type: ColorAnimationType.Pulse }],
+    //     letterAnimations: [{ type: LetterAnimationType.None }],
+    //     strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     strokeWidth: 2,
+    //     fillColor: [0.1, 0.1, 0.1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
     // },
     {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.Rainbow,
-        letterAnimation: LetterAnimationType.Wave,
-        strokeAnimation: ColorAnimationType.None,
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.None,
-        letterAnimation: LetterAnimationType.Vibrate,
-        strokeAnimation: ColorAnimationType.Static,
-        strokeWidth: 2,
-        strokeColor: [1, 0, 0],
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.None,
-        letterAnimation: LetterAnimationType.Vibrate,
-        strokeAnimation: ColorAnimationType.None,
-        strokeWidth: 2,
-        fillColor: [0, 1, 0],
-        strokeColor: [1, 0, 0],
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.None,
-        letterAnimation: LetterAnimationType.Vibrate,
-        strokeAnimation: ColorAnimationType.None,
-        fillColor: [0, 1, 0],
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.Bounce,
-        colorAnimation: ColorAnimationType.Rainbow,
-        strokeAnimation: ColorAnimationType.None,
+        transformAnimations: [{ type: TransformAnimationType.Bounce }],
+        letterAnimations: [{ type: LetterAnimationType.Rotate }],
+        colorAnimations: [{ type: ColorAnimationType.None }],
+        strokeAnimations: [{ type: ColorAnimationType.None }],
         fillColor: [1, 1, 1],
-        letterAnimation: LetterAnimationType.None,
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.ShakeLoop,
-        colorAnimation: ColorAnimationType.Rainbow,
-        strokeAnimation: ColorAnimationType.None,
-        fillColor: [1, 1, 1],
-        letterAnimation: LetterAnimationType.None,
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.Rainbow,
-        letterAnimation: LetterAnimationType.TypingFall,
-        strokeAnimation: ColorAnimationType.None,
-        fillColor: [1, 1, 1],
-        pathMorphAnimation: PathMorphAnimationType.None
-    },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.Static,
-        letterAnimation: LetterAnimationType.Wave,
-        strokeAnimation: ColorAnimationType.Rainbow,
-        pathMorphAnimation: PathMorphAnimationType.None,
-        // fillColor: [0, 0, 0],
-        strokeWidth: 2,
-    },
-    {
-        transformAnimation: TransformAnimationType.ScalePulse,
-        colorAnimation: ColorAnimationType.Static,
-        letterAnimation: LetterAnimationType.Wave,
-        strokeAnimation: ColorAnimationType.CycleRGB,
-        pathMorphAnimation: PathMorphAnimationType.None,
-        fillColor: [1, 1, 1],
-        strokeWidth: 2,
     },
     // {
-    //     transform: TransformAnimationType.ScalePulse,
-    //     color: ColorAnimationType.None,
-    //     letterAnimation: LetterAnimationType.Wave,
-    //     name: 'Wave Rainbow',
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.TypingFall }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 0.9, 0.6],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.Warp }],
     // },
     // {
-    //     transform: TransformAnimationType.ShakeLoop,
-    //     color: ColorAnimationType.None,
-    //     letterAnimation: LetterAnimationType.ZigZag,
-    //     name: 'ZigZag Pulse',
+    //     transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.None }],
+    //     strokeAnimations: [{ type: ColorAnimationType.Pulse }],
+    //     strokeWidth: 2,
+    //     strokeColor: [0, 0.5, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
     // },
     // {
-    //     transform: TransformAnimationType.RotateContinuous,
-    //     color: ColorAnimationType.None,
-    //     letterAnimation: LetterAnimationType.Wave,
-    //     name: 'Warp RGB Shake',
+    //     transformAnimations: [{ type: TransformAnimationType.Bounce }],
+    //     colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     letterAnimations: [{ type: LetterAnimationType.Wave }],
+    //     strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
+    //     strokeWidth: 2,
+    //     fillColor: [0.95, 0.95, 0.95],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
     // },
     // {
-    //     transform: TransformAnimationType.Bounce,
-    //     color: ColorAnimationType.None,
-    //     name: 'Bounce RGB',
+    //     transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.None }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.WarpAiry }],
     // },
     // {
-    //     transform: TransformAnimationType.ShakeLoop,
-    //     color: ColorAnimationType.CycleRGB,
-    //     name: 'Shake RGB',
+    //     transformAnimations: [
+    //         { type: TransformAnimationType.ScalePulse, priority: 0 },
+    //         {
+    //             type: TransformAnimationType.RotateContinuous,
+    //             priority: 1,
+    //             compose: (base, next, _ctx) => blendTransform(0.4)(base, next, _ctx as any) as any,
+    //         },
+    //     ],
+    //     colorAnimations: [{ type: ColorAnimationType.None }],
+    //     letterAnimations: [{ type: LetterAnimationType.Wave }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
     // },
     // {
-    //     transform: TransformAnimationType.RotateContinuous,
-    //     color: ColorAnimationType.Pulse,
-    //     name: 'Rotate Pulse',
+    //     transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
+    //     colorAnimations: [
+    //         { type: ColorAnimationType.Rainbow, priority: 0 },
+    //         {
+    //             type: ColorAnimationType.Pulse,
+    //             priority: 1,
+    //             compose: (base, next, _ctx) => blendColor(0.5)(base, next, _ctx as any) as any,
+    //         },
+    //     ],
+    //     letterAnimations: [{ type: LetterAnimationType.ZigZag }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 1, 1],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     // },
     // {
-    //     transform: TransformAnimationType.Vibrate,
-    //     color: ColorAnimationType.Pulse,
-    //     name: 'Vibrate Pulse',
+    //     transformAnimations: [{ type: TransformAnimationType.Bounce }],
+    //     colorAnimations: [
+    //         { type: ColorAnimationType.None, priority: 0 },
+    //         {
+    //             type: ColorAnimationType.Rainbow,
+    //             priority: 1,
+    //             compose: (base, next, _ctx) => timelineColor(base, next) as any,
+    //         },
+    //     ],
+    //     letterAnimations: [{ type: LetterAnimationType.TypingFall }],
+    //     strokeAnimations: [{ type: ColorAnimationType.None }],
+    //     fillColor: [1, 0.9, 0.9],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.Warp }],
     // },
     // {
-    //     transform: TransformAnimationType.ShakeLoop,
-    //     color: ColorAnimationType.None,
-    //     name: 'Scale None',
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
+    //     fillColor: [0, 1, 0],
     // },
     // {
-    //     transform: TransformAnimationType.Bounce,
-    //     color: ColorAnimationType.CycleRGB,
-    //     name: 'Scale CycleRGB',
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
+    //     fillColor: [1, 0, 0],
     // },
     // {
-    //     transform: TransformAnimationType.ScalePulse,
-    //     color: ColorAnimationType.Pulse,
-    //     name: 'Scale Pulse',
+    //     transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+    //     colorAnimations: [
+    //         { type: ColorAnimationType.Pulse, priority: 0 },
+    //         {
+    //             type: ColorAnimationType.None,
+    //             priority: 1,
+    //             compose: (base, next, _ctx) => timelineColor(base, next) as any,
+    //         },
+    //     ],
+    //     letterAnimations: [{ type: LetterAnimationType.None }],
+    //     strokeAnimations: [
+    //         { type: ColorAnimationType.None, priority: 0 },
+    //         {
+    //             type: ColorAnimationType.Rainbow,
+    //             priority: 1,
+    //             compose: (base, next, _ctx) => timelineColor(base, next) as any,
+    //         },
+    //     ],
+    //     strokeWidth: 2,
+    //     strokeColor: [1, 1, 1],
+    //     fillColor: [0.2, 0.2, 0.2],
+    //     pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     // },
 ];
-
-async function ensureDir(dirPath: string) {
-    try {
-        await fs.mkdir(dirPath, { recursive: true });
-    } catch { }
-}
 
 // Store which chat was used last for round-robin distribution
 let lastUsedChatIndex = 0;
@@ -247,7 +326,7 @@ async function generateAndCacheStickers(
 
                 try {
                     console.log(`[${index + 1}/${STICKER_VARIANTS.length}] Generating for "${normalizedText}"...`);
-                    const sticker = await generateTextSticker({
+                    const sticker = await generateSticker({
                         text: normalizedText,
                         fontSize: 72,
                         frameRate: 60,
@@ -317,9 +396,17 @@ async function generateAndCacheStickers(
 bot.on('inline_query', async (ctx) => {
     const query = ctx.inlineQuery.query;
     const offset = parseInt(ctx.inlineQuery.offset || '0');
+    console.log(`offset: ${offset}`);
+
     const userId = ctx.from.id.toString();
     const queryId = ctx.inlineQuery.id;
-    const STICKERS_PER_PAGE = 15;
+    const STICKERS_PER_PAGE = 10;
+
+    // No more pages to serve
+    if (offset >= STICKER_VARIANTS.length) {
+        await ctx.answerInlineQuery([], { cache_time: 300, next_offset: '' });
+        return;
+    }
 
     // Clear existing debounce timer for this user
     const existingTimer = debounceTimers.get(userId);
@@ -351,16 +438,19 @@ bot.on('inline_query', async (ctx) => {
 
         if (cachedResults.length > 0) {
             try {
-                const paginatedResults = cachedResults.slice(offset, offset + STICKERS_PER_PAGE);
-                const nextOffset = offset + STICKERS_PER_PAGE < cachedResults.length
-                    ? (offset + STICKERS_PER_PAGE).toString()
-                    : '';
+                // If we don't have enough cached results for this offset, fall through to generation
+                if (offset < cachedResults.length) {
+                    const paginatedResults = cachedResults.slice(offset, offset + STICKERS_PER_PAGE);
+                    const nextOffset = offset + STICKERS_PER_PAGE < cachedResults.length
+                        ? (offset + STICKERS_PER_PAGE).toString()
+                        : '';
 
-                await ctx.answerInlineQuery(paginatedResults, {
-                    cache_time: 300,
-                    next_offset: nextOffset,
-                });
-                return;
+                    await ctx.answerInlineQuery(paginatedResults, {
+                        // cache_time: 300,
+                        next_offset: nextOffset,
+                    });
+                    return;
+                }
             } catch (error) {
                 console.error('Error answering with cached results:', error);
             }
@@ -380,7 +470,7 @@ bot.on('inline_query', async (ctx) => {
                 : '';
 
             await ctx.answerInlineQuery(results, {
-                cache_time: 300, // Cache for 5 minutes
+                // cache_time: 300, // Cache for 5 minutes
                 next_offset: nextOffset,
             });
         } catch (error) {
@@ -427,4 +517,3 @@ console.log('Press Ctrl+C to stop.');
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
