@@ -82,7 +82,7 @@
 
 - Добавлен wget для health checks
 - Добавлен HEALTHCHECK
-- Экспонирован порт 9090 для метрик
+- Экспонирован порт 9099 для метрик
 
 ## Переменные окружения
 
@@ -95,7 +95,7 @@ ENABLE_LOKI=true
 LOKI_HOST=http://loki:3100
 
 # Metrics
-METRICS_PORT=9090
+METRICS_PORT=9099
 
 # Grafana
 GRAFANA_ADMIN_USER=admin
@@ -109,7 +109,7 @@ GRAFANA_ADMIN_PASSWORD=admin
 - **Bot Metrics:** http://localhost:9095/metrics
 - **Bot Health:** http://localhost:9095/health
 - **Grafana:** http://localhost:3000
-- **Prometheus:** http://localhost:9091
+- **Prometheus:** http://localhost:9099
 - **Loki:** http://localhost:3100
 
 ## Как использовать
@@ -137,7 +137,7 @@ docker-compose up -d
 ### Проверка здоровья
 
 ```bash
-curl http://localhost:9090/health
+curl http://localhost:9099/health
 ```
 
 ## Grafana Dashboard

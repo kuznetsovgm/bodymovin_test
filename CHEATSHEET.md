@@ -58,8 +58,8 @@ curl http://localhost:9095/health
 curl http://localhost:9095/metrics
 
 # Prometheus
-curl http://localhost:9091/-/healthy
-curl http://localhost:9091/api/v1/targets
+curl http://localhost:9099/-/healthy
+curl http://localhost:9099/api/v1/targets
 
 # Loki
 curl http://localhost:3100/ready
@@ -345,7 +345,7 @@ ENABLE_LOKI=true         # true/false
 LOKI_HOST=http://loki:3100
 
 # Metrics
-METRICS_PORT=9090
+METRICS_PORT=9099
 
 # Grafana
 GRAFANA_ADMIN_USER=admin
@@ -364,7 +364,7 @@ NODE_ENV=production      # development/production
 docker-compose restart prometheus
 
 # Check targets
-curl http://localhost:9091/api/v1/targets | jq
+curl http://localhost:9099/api/v1/targets | jq
 ```
 
 ### Логи не появляются

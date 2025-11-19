@@ -38,7 +38,7 @@ docker-compose logs -f bot
 - **Grafana Dashboard:** http://localhost:3000
   - Логин: `admin`
   - Пароль: `admin` (или из `.env`)
-- **Prometheus:** http://localhost:9091
+- **Prometheus:** http://localhost:9099
 - **Bot Metrics:** http://localhost:9095/metrics
 
 - **Bot Health Check:** http://localhost:9095/health
@@ -215,11 +215,11 @@ npm run watch
 1. Проверьте endpoint:
 
    ```bash
-   curl http://localhost:9090/metrics
+   curl http://localhost:9099/metrics
    ```
 
 2. Проверьте targets в Prometheus:
-   http://localhost:9091/targets
+   http://localhost:9099/targets
 
 3. Проверьте логи Prometheus:
    ```bash

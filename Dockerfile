@@ -24,11 +24,11 @@ RUN npm run build || npx tsc
 RUN mkdir -p temp stickers public/stickers
 
 # Expose metrics port
-EXPOSE 9090
+EXPOSE 9099
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:9099/health || exit 1
 
 # Default command - can be overridden in docker-compose
 CMD ["node", "-r", "dotenv/config", "./dist/bot.js"]

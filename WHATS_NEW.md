@@ -17,7 +17,7 @@ ENABLE_LOKI=true
 LOKI_HOST=http://loki:3100
 
 # Metrics Configuration
-METRICS_PORT=9090
+METRICS_PORT=9099
 
 # Grafana Configuration (опционально)
 GRAFANA_ADMIN_USER=admin
@@ -74,7 +74,7 @@ docker-compose ps
 После запуска доступны:
 
 - **Grafana Dashboard:** http://localhost:3000
-- **Prometheus:** http://localhost:9091
+- **Prometheus:** http://localhost:9099
 - **Bot Metrics:** http://localhost:9095/metrics
 - **Bot Health:** http://localhost:9095/health
 
@@ -151,10 +151,10 @@ rate(bot_cache_hits_total[5m]) / (rate(bot_cache_hits_total[5m]) + rate(bot_cach
 
 ```bash
 # Проверьте endpoint метрик
-curl http://localhost:9090/metrics
+curl http://localhost:9099/metrics
 
 # Проверьте targets в Prometheus
-# Откройте: http://localhost:9091/targets
+# Откройте: http://localhost:9099/targets
 ```
 
 ### Логи не появляются в Loki?

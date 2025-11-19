@@ -58,7 +58,7 @@ echo ""
 echo "🌐 HTTP Endpoints:"
 check_http "Bot Health" "http://localhost:9095/health"
 check_http "Bot Metrics" "http://localhost:9095/metrics"
-check_http "Prometheus" "http://localhost:9091/-/healthy"
+check_http "Prometheus" "http://localhost:9099/-/healthy"
 check_http "Loki" "http://localhost:3100/ready"
 check_http "Grafana" "http://localhost:3000/api/health"
 check_http "Redis Exporter" "http://localhost:9121/metrics"
@@ -66,7 +66,7 @@ echo ""
 
 # Check Prometheus targets
 echo "🎯 Prometheus Targets:"
-targets=$(curl -s http://localhost:9091/api/v1/targets 2>/dev/null)
+targets=$(curl -s http://localhost:9099/api/v1/targets 2>/dev/null)
 if echo "$targets" | grep -q '"health":"up"'; then
     up_count=$(echo "$targets" | grep -o '"health":"up"' | wc -l)
     echo -e "${GREEN}✓${NC} Prometheus has $up_count target(s) up"
@@ -106,7 +106,7 @@ echo "📋 Quick Access Links:"
 echo "  Bot Metrics:  http://localhost:9095/metrics"
 echo "  Bot Health:   http://localhost:9095/health"
 echo "  Grafana:      http://localhost:3000 (admin/admin)"
-echo "  Prometheus:   http://localhost:9091"
+echo "  Prometheus:   http://localhost:9099"
 echo ""
 echo "📝 Useful Commands:"
 echo "  View logs:    docker-compose logs -f bot"

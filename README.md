@@ -98,7 +98,7 @@ Worker pool:
 
 Мониторинг:
 
-- `METRICS_PORT` - порт для метрик Prometheus (по умолчанию: 9090)
+- `METRICS_PORT` - порт для метрик Prometheus (по умолчанию: 9099)
 
 См. `.env.example` для полного списка переменных.
 
@@ -122,7 +122,7 @@ docker-compose logs -f bot
 ### Доступ к сервисам:
 
 - **Grafana:** http://localhost:3000 (admin/admin)
-- **Prometheus:** http://localhost:9091
+- **Prometheus:** http://localhost:9099
 - **Bot Metrics:** http://localhost:9095/metrics
 - **Bot Health:** http://localhost:9095/health
 

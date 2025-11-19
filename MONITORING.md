@@ -6,11 +6,11 @@
 
 ### 1. Prometheus
 
-**URL:** http://localhost:9091
+**URL:** http://localhost:9099
 
 Prometheus собирает метрики из следующих источников:
 
-- **Bot Metrics** (порт 9090): Метрики приложения бота
+- **Bot Metrics** (порт 9099): Метрики приложения бота
 - **Redis Exporter** (порт 9121): Метрики Redis
 
 ### 2. Loki
@@ -211,7 +211,7 @@ ENABLE_LOKI=true
 LOKI_HOST=http://loki:3100
 
 # Metrics
-METRICS_PORT=9090
+METRICS_PORT=9099
 
 # Grafana (опционально, по умолчанию admin/admin)
 GRAFANA_ADMIN_USER=admin
@@ -227,8 +227,8 @@ GRAFANA_ADMIN_PASSWORD=your_secure_password
 
 ### Prometheus
 
-- **Web UI:** http://localhost:9091
-- **API:** http://localhost:9091/api/v1/
+- **Web UI:** http://localhost:9099
+- **API:** http://localhost:9099/api/v1/
 
 ### Loki
 
@@ -340,8 +340,8 @@ groups:
 ### Метрики не отображаются в Grafana
 
 1. Проверьте, что бот запущен: `docker-compose ps bot`
-2. Проверьте endpoint метрик: `curl http://localhost:9090/metrics`
-3. Проверьте targets в Prometheus: http://localhost:9091/targets
+2. Проверьте endpoint метрик: `curl http://localhost:9099/metrics`
+3. Проверьте targets в Prometheus: http://localhost:9099/targets
 
 ### Логи не появляются в Loki
 

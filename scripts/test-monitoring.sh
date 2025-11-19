@@ -53,7 +53,7 @@ run_test "Bot Metrics Endpoint" \
     "bot_health_status"
 
 run_test "Prometheus Health" \
-    "curl -s http://localhost:9091/-/healthy" \
+    "curl -s http://localhost:9099/-/healthy" \
     "Prometheus"
 
 run_test "Loki Ready" \
@@ -93,11 +93,11 @@ echo "Testing Prometheus Integration..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 run_test "Prometheus can scrape bot metrics" \
-    "curl -s 'http://localhost:9091/api/v1/query?query=bot_health_status'" \
+    "curl -s 'http://localhost:9099/api/v1/query?query=bot_health_status'" \
     "success"
 
 run_test "Prometheus has bot target up" \
-    "curl -s http://localhost:9091/api/v1/targets" \
+    "curl -s http://localhost:9099/api/v1/targets" \
     '"health":"up"'
 
 echo ""
@@ -150,7 +150,7 @@ if [ $failed -eq 0 ]; then
     echo ""
     echo "🎉 You can now:"
     echo "  • Open Grafana: http://localhost:3000"
-    echo "  • View Prometheus: http://localhost:9091"
+    echo "  • View Prometheus: http://localhost:9099"
     echo "  • Check bot metrics: http://localhost:9095/metrics"
     exit 0
 else
