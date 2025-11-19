@@ -6,7 +6,7 @@ services:
     container_name: bodymovin-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
@@ -43,7 +43,7 @@ services:
       - ./public:/app/public
       - ./fonts:/app/fonts
     ports:
-      - "9095:9090"
+      - "127.0.0.1:9095:9090"
     command: node -r dotenv/config ./dist/bot.js
     healthcheck:
       test:
@@ -81,7 +81,7 @@ services:
       - "--storage.tsdb.retention.time=30d"
       - "--web.enable-lifecycle"
     ports:
-      - "9091:9090"
+      - "127.0.0.1:9091:9090"
     networks:
       - bodymovin-net
     depends_on:
@@ -93,7 +93,7 @@ services:
     restart: unless-stopped
     user: "0"
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     volumes:
       - ./loki-config.yml:/etc/loki/local-config.yaml
       - loki-data:/loki
@@ -120,7 +120,7 @@ services:
     container_name: bodymovin-grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -142,7 +142,7 @@ services:
     environment:
       - REDIS_ADDR=redis://redis:6379
     ports:
-      - "9121:9121"
+      - "127.0.0.1:9121:9121"
     networks:
       - bodymovin-net
     depends_on:
