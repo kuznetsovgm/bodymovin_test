@@ -55,7 +55,7 @@ const WORKER_QUEUE_SIZE = parseInt(process.env.WORKER_QUEUE_SIZE || '100', 10);
 const workerPool = new StickerWorkerPool(WORKER_POOL_SIZE, WORKER_QUEUE_SIZE);
 
 // HTTP server for metrics and health checks
-const METRICS_PORT = parseInt(process.env.METRICS_PORT || '9099', 10);
+const METRICS_PORT = parseInt(process.env.METRICS_PORT || '3099', 10);
 const metricsServer = http.createServer(async (req, res) => {
     if (req.url === '/metrics') {
         res.setHeader('Content-Type', register.contentType);

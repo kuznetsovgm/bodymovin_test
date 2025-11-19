@@ -98,7 +98,7 @@ Worker pool:
 
 Мониторинг:
 
-- `METRICS_PORT` - порт для метрик Prometheus (по умолчанию: 9099)
+- `METRICS_PORT` - порт для метрик Prometheus (по умолчанию: 3099)
 
 См. `.env.example` для полного списка переменных.
 

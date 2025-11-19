@@ -33,7 +33,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - BOT_TOKEN=${BOT_TOKEN}
       - NODE_ENV=production
-      - METRICS_PORT=9099
+      - METRICS_PORT=3099
       - LOKI_HOST=http://loki:3100
       - ENABLE_LOKI=true
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -47,7 +47,7 @@ services:
       - ./public:/app/public
       - ./fonts:/app/fonts
     ports:
-      - "127.0.0.1:9095:9099"
+      - "127.0.0.1:3099:3099"
     command: node -r dotenv/config ./dist/bot.js
     healthcheck:
       test:
@@ -57,7 +57,7 @@ services:
           "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://localhost:9099/health",
+          "http://localhost:3099/health",
         ]
       interval: 30s
       timeout: 10s
@@ -67,7 +67,7 @@ services:
       - bodymovin-net
     labels:
       - "prometheus.scrape=true"
-      - "prometheus.port=9099"
+      - "prometheus.port=3099"
       - "prometheus.path=/metrics"
 
   prometheus:
@@ -85,7 +85,7 @@ services:
       - "--storage.tsdb.retention.time=30d"
       - "--web.enable-lifecycle"
     ports:
-      - "127.0.0.1:9099:9099"
+      - "127.0.0.1:9099:9090"
     networks:
       - bodymovin-net
     depends_on:

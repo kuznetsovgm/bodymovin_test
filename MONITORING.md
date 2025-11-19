@@ -211,7 +211,7 @@ ENABLE_LOKI=true
 LOKI_HOST=http://loki:3100
 
 # Metrics
-METRICS_PORT=9099
+METRICS_PORT=3099
 
 # Grafana (опционально, по умолчанию admin/admin)
 GRAFANA_ADMIN_USER=admin

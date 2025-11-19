@@ -20,7 +20,7 @@ scrape_configs:
   # Bot metrics
   - job_name: 'bodymovin-bot'
     static_configs:
-      - targets: ['bot:9099']
+      - targets: ['bot:3099']
         labels:
           service: 'bodymovin-bot'
 
