@@ -3,6 +3,7 @@ import {
     InlineQueryResult,
     InlineQueryResultCachedSticker,
 } from 'telegraf/types';
+import { Input } from 'telegraf';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import {
@@ -152,10 +153,8 @@ async function uploadStickerToTelegram(
     lastUsedChatIndex = (lastUsedChatIndex + 1) % uploadChatIds.length;
 
     try {
-        const message = await ctx.telegram.sendSticker(chatId, {
-            source: stickerBuffer,
-        });
-        const fileId = message.sticker?.file_id;
+        const file = await ctx.telegram.uploadStickerFile(+chatId, Input.fromBuffer(stickerBuffer, 'sticker.tgs'), 'animated');
+        const fileId = file.file_id;
         const duration = (Date.now() - startTime) / 1000;
 
         if (fileId) {
@@ -182,7 +181,6 @@ async function generateAndCacheStickers(
     if (!text.trim()) {
         return [];
     }
-
     const normalizedText = text.toUpperCase().trim();
 
     // Load enabled sticker configs from Redis
