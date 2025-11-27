@@ -1,4 +1,4 @@
-import { AnimationDescriptor, ColorAnimationType } from '../domain/types';
+import { ColorAnimationDescriptor, ColorAnimationType } from '../domain/types';
 import { FillShape, StrokeShape } from '../interfaces/lottie';
 import { Track } from '../shared/keyframes';
 import { applyColorsWithCompose } from '../animations/composers';
@@ -15,8 +15,8 @@ type StyleContext = {
 };
 
 export function buildLetterStyles(
-    colorAnimations: AnimationDescriptor<ColorAnimationType>[] | undefined,
-    strokeAnimations: AnimationDescriptor<ColorAnimationType>[] | undefined,
+    colorAnimations: ColorAnimationDescriptor[] | undefined,
+    strokeAnimations: ColorAnimationDescriptor[] | undefined,
     ctx: StyleContext,
 ): { fill?: FillShape; stroke?: StrokeShape } {
     const { duration, strokeWidth, strokeColor, fillColor, letterPhase, letterIndex } = ctx;

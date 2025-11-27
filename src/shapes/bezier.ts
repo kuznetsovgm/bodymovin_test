@@ -4,6 +4,7 @@ import { Bezier } from '../interfaces/lottie';
 import { PathMorphAnimationType } from '../domain/types';
 import { linearIn, linearOut } from '../shared/keyframes';
 import { seededNoise } from '../shared/noise';
+import { pathMorphAnimationConfig } from '../config/animation-config';
 
 export function buildPathMorphKeyframes(
     bez: Bezier,
@@ -11,11 +12,19 @@ export function buildPathMorphKeyframes(
     duration: number,
     morph: PathMorphAnimationType,
     seed: number,
+    params?: any,
 ): any[] | null {
     if (morph === PathMorphAnimationType.None) return null;
-    const intensity = fontSize * 0.1;
+    const baseCfg = {
+        ...pathMorphAnimationConfig[morph],
+        ...(params ?? {}),
+    } as any;
+    const intensity = fontSize * baseCfg.intensityFactor;
 
-    const phases = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3];
+    const phases =
+        morph === PathMorphAnimationType.Warp || morph === PathMorphAnimationType.WarpAiry
+            ? pathMorphAnimationConfig[morph].phases
+            : [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3];
     const states =
         morph === PathMorphAnimationType.SkewSwing
             ? buildSwingStates(bez, intensity)
@@ -169,13 +178,14 @@ function warpCornerMorphAiry(
     phase: number,
     seed: number,
 ): Bezier {
+    const cfg = pathMorphAnimationConfig[PathMorphAnimationType.WarpAiry];
     const count = bez.v.length;
     const baseDisp: number[][] = [];
     const waves: number[] = [];
     const nI: number[][] = [];
     const nO: number[][] = [];
-    const lowFreq = 0.35;
-    const highFreq = 0.12;
+    const lowFreq = cfg.lowFrequency;
+    const highFreq = cfg.highFrequency;
     for (let i = 0; i < count; i++) {
         const prev = bez.v[(i - 1 + count) % count];
         const curr = bez.v[i];
@@ -214,8 +224,8 @@ function warpCornerMorphAiry(
         const inVec = bez.i[i] || [0, 0];
         const outVec = bez.o[i] || [0, 0];
         const wave = waves[i];
-        const scale = 1 + wave * 0.08;
-        const rot = wave * 0.18;
+        const scale = 1 + wave * cfg.scaleFactor;
+        const rot = wave * cfg.rotationFactor;
         nI.push(warpHandle(inVec, rot, scale));
         nO.push(warpHandle(outVec, -rot, scale));
     }
@@ -259,13 +269,14 @@ function applyMorph(
 }
 
 function skewAmount(intensity: number) {
-    // intensity is fontSize * 0.1; normalize and clamp a visible shear
-    const norm = intensity > 0 ? Math.min(intensity / 7.2, 2) : 1; // ~1 for default font size
-    return Math.min(0.8, Math.max(0.3, 0.45 * norm));
+    const baseCfg = pathMorphAnimationConfig[PathMorphAnimationType.SkewPulse];
+    const norm = intensity > 0 ? Math.min(intensity / baseCfg.skewNormDivisor, 2) : 1;
+    return Math.min(baseCfg.skewMax, Math.max(baseCfg.skewMin, baseCfg.skewBase * norm));
 }
 
 function buildSwingStates(bez: Bezier, intensity: number) {
-    const amp = skewAmount(intensity) * 0.7;
+    const cfg = pathMorphAnimationConfig[PathMorphAnimationType.SkewSwing];
+    const amp = skewAmount(intensity) * cfg.swingAmplitudeScale;
     const ks = [amp, 0, -amp, 0];
     return ks.map((k) => skewMorphWithK(bez, k));
 }

@@ -7,22 +7,30 @@ import {
     LetterAnimationType,
     PathMorphAnimationType,
 } from './index';
+import { DEFAULT_FONT_FILE } from './domain/defaults';
 
-// Default sticker variants - same as the original STICKER_VARIANTS
+const BASE_STICKER_DEFAULTS: Partial<Omit<GenerateStickerOptions, 'text'>> = {
+    fontFile: DEFAULT_FONT_FILE,
+};
+
+// Default sticker variants
 const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         strokeAnimations: [{ type: ColorAnimationType.TransparencyPulse }],
         strokeColor: [1, 0.1, 0.1],
         strokeWidth: 3,
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
         strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
         strokeWidth: 2,
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
@@ -31,12 +39,14 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         strokeWidth: 1,
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
         colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
         fillColor: [0.5, 0.5, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
         fillColor: [0, 0, 0],
@@ -44,12 +54,14 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         strokeWidth: 4,
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
@@ -59,18 +71,21 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         strokeColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
         fillColor: [0.9, 0.95, 1],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
@@ -78,35 +93,41 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         letterAnimations: [{ type: LetterAnimationType.Rotate }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
         fillColor: [1, 0.9, 0.9],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Vibrate }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
         fillColor: [0.85, 1, 0.85],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         fillColor: [0, 0.7, 1],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
@@ -116,22 +137,26 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
         letterAnimations: [{ type: LetterAnimationType.Rotate }],
         fillColor: [0.95, 0.9, 0.8],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
@@ -140,18 +165,21 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         fillColor: [0.96, 0.96, 0.96],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
         fillColor: [1, 0.9, 0.6],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
         fillColor: [0.9, 1, 0.9],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
         colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
@@ -159,6 +187,7 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
@@ -168,17 +197,20 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         fillColor: [0.1, 0.1, 0.1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         letterAnimations: [{ type: LetterAnimationType.Rotate }],
         fillColor: [0.9, 0.85, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
         fillColor: [0.8, 0.95, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         colorAnimations: [{ type: ColorAnimationType.Pulse }],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
@@ -189,12 +221,14 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
         fillColor: [1, 1, 1],
     },
     {
+        ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.None }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],

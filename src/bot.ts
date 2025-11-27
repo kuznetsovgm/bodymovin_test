@@ -329,7 +329,7 @@ bot.on('inline_query', async (ctx) => {
     const offset = parseInt(ctx.inlineQuery.offset || '0');
     const queryStartTime = Date.now();
 
-    logger.debug(`Inline query: offset=${offset}, query="${query}"`);
+    logger.debug(`Inline query: offset=${offset}, query="${query}", user=${ctx.from.id}, username=${ctx.from.username || ''}, first_name=${ctx.from.first_name}`);
 
     const userId = ctx.from.id.toString();
     const queryId = ctx.inlineQuery.id;

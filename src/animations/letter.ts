@@ -1,6 +1,7 @@
 import { TransformShape, ShapeType } from '../interfaces/lottie';
-import { AnimationDescriptor, ComposeFn, LetterAnimationType } from '../domain/types';
+import { ComposeFn, LetterAnimationDescriptor, LetterAnimationType } from '../domain/types';
 import { buildRawKeyframes, buildValueKeyframes, linearIn, linearOut } from '../shared/keyframes';
+import { letterAnimationConfig } from '../config/animation-config';
 
 export type LetterContext = {
     letterIndex: number;
@@ -30,14 +31,19 @@ function createBaseTransform(index: number, x: number, y: number): TransformShap
 export function buildLetterTransform(
     type: LetterAnimationType,
     ctx: LetterContext,
+    params?: any,
 ): TransformShape {
     const { letterIndex, x, y, duration, canvasHeight } = ctx;
     switch (type) {
         case LetterAnimationType.Vibrate: {
-            const intensity = 2,
-                steps = 30,
-                pts: number[][] = [],
-                times: number[] = [];
+            const cfg = {
+                ...letterAnimationConfig[LetterAnimationType.Vibrate],
+                ...(params ?? {}),
+            };
+            const intensity = cfg.intensity;
+            const steps = cfg.steps;
+            const pts: number[][] = [];
+            const times: number[] = [];
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 pts.push([
@@ -52,9 +58,13 @@ export function buildLetterTransform(
             };
         }
         case LetterAnimationType.TypingFall: {
-            const delay = (letterIndex * duration) / 40;
-            const fallDur = duration / 6;
-            const startY = y - canvasHeight;
+            const cfg = {
+                ...letterAnimationConfig[LetterAnimationType.TypingFall],
+                ...(params ?? {}),
+            };
+            const delay = letterIndex * duration * cfg.delayPerLetterFactor;
+            const fallDur = duration * cfg.fallDurationFactor;
+            const startY = y - canvasHeight * cfg.startYOffsetFactor;
             const kf = [
                 { t: 0, s: [x, startY], e: [x, startY], i: linearIn(), o: linearOut() },
                 { t: delay, s: [x, startY], e: [x, y], i: linearIn(), o: linearOut() },
@@ -66,11 +76,15 @@ export function buildLetterTransform(
             };
         }
         case LetterAnimationType.Wave: {
-            const amp = 12,
-                steps = 40,
-                pts: number[][] = [],
-                times: number[] = [],
-                phase = letterIndex * 0.4;
+            const cfg = {
+                ...letterAnimationConfig[LetterAnimationType.Wave],
+                ...(params ?? {}),
+            };
+            const amp = cfg.amplitude;
+            const steps = cfg.steps;
+            const pts: number[][] = [];
+            const times: number[] = [];
+            const phase = letterIndex * cfg.phasePerLetter;
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 const angle = phase + (2 * Math.PI * t) / duration;
@@ -83,16 +97,20 @@ export function buildLetterTransform(
             };
         }
         case LetterAnimationType.ZigZag: {
-            const spread = 35,
-                steps = 48,
-                pts: number[][] = [],
-                times: number[] = [],
-                phase = letterIndex * Math.PI;
+            const cfg = {
+                ...letterAnimationConfig[LetterAnimationType.ZigZag],
+                ...(params ?? {}),
+            };
+            const spread = cfg.spread;
+            const steps = cfg.steps;
+            const pts: number[][] = [];
+            const times: number[] = [];
+            const phase = letterIndex * cfg.phasePerLetter;
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 const angle = phase + (2 * Math.PI * t) / duration;
-                const sy = 100 + Math.sin(angle) * spread;
-                pts.push([100, sy]);
+                const sy = cfg.baseScale + Math.sin(angle) * spread;
+                pts.push([cfg.baseScale, sy]);
                 times.push(t);
             }
             return {
@@ -101,12 +119,20 @@ export function buildLetterTransform(
             };
         }
         case LetterAnimationType.Rotate: {
+            const cfg = {
+                ...letterAnimationConfig[LetterAnimationType.Rotate],
+                ...(params ?? {}),
+            };
             const base = createBaseTransform(letterIndex, x, y);
             return {
                 ...base,
                 r: {
                     a: 1,
-                    k: buildRawKeyframes([0, 360], [0, duration], false),
+                    k: buildRawKeyframes(
+                        [cfg.fromAngle, cfg.toAngle],
+                        [0, duration],
+                        cfg.loop,
+                    ),
                     ix: 6,
                 } as any,
             };
@@ -118,13 +144,13 @@ export function buildLetterTransform(
 }
 
 export function applyLetterAnimations(
-    descs: AnimationDescriptor<LetterAnimationType>[] | undefined,
+    descs: LetterAnimationDescriptor[] | undefined,
     ctx: LetterContext,
 ): TransformShape {
     const list = descs && descs.length ? descs : [{ type: LetterAnimationType.None }];
     const sorted = [...list].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
     return sorted.reduce<TransformShape | null>((acc, desc) => {
-        const next = buildLetterTransform(desc.type, ctx);
+        const next = buildLetterTransform(desc.type, ctx, desc.params);
         if (!acc) return next;
         const compose = desc.compose as ComposeFn<TransformShape, LetterContext> | undefined;
         return compose ? compose(acc, next, ctx) : next;

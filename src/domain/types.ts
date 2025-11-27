@@ -1,6 +1,12 @@
 import { Sticker } from '../interfaces/sticker';
 import { ShapeLayer, TransformShape } from '../interfaces/lottie';
 import { Track } from '../shared/keyframes';
+import type {
+    TransformAnimationConfig,
+    ColorAnimationConfig,
+    LetterAnimationConfig,
+    PathMorphAnimationConfig,
+} from '../config/animation-config';
 
 export { Sticker };
 
@@ -52,6 +58,7 @@ export type AnimationDescriptor<TType, TParams = any, TPatch = any, TCtx = any> 
     window?: AnimationWindow;
 };
 
+// Contexts shared across specialised descriptors
 export type TransformContext = { width: number; height: number; duration: number };
 export type LetterContext = {
     letterIndex: number;
@@ -62,39 +69,48 @@ export type LetterContext = {
 };
 export type ColorContext = { duration: number };
 
+// ---------- Strongly-typed params per animation type ----------
+
+export type TransformAnimationParams<T extends TransformAnimationType = TransformAnimationType> =
+    TransformAnimationConfig[T];
+
+export type ColorAnimationParams<T extends ColorAnimationType = ColorAnimationType> =
+    ColorAnimationConfig[T];
+
+export type LetterAnimationParams<T extends LetterAnimationType = LetterAnimationType> =
+    LetterAnimationConfig[T];
+
+export type PathMorphAnimationParams<T extends PathMorphAnimationType = PathMorphAnimationType> =
+    PathMorphAnimationConfig[T];
+
+// Specialised descriptors bound to enum -> params mapping
+
+export type TransformAnimationDescriptor<
+    T extends TransformAnimationType = TransformAnimationType,
+> = AnimationDescriptor<T, TransformAnimationParams<T>, ShapeLayer['ks'], TransformContext>;
+
+export type LetterAnimationDescriptor<
+    T extends LetterAnimationType = LetterAnimationType,
+> = AnimationDescriptor<T, LetterAnimationParams<T>, TransformShape, LetterContext>;
+
+export type ColorAnimationDescriptor<
+    T extends ColorAnimationType = ColorAnimationType,
+> = AnimationDescriptor<T, ColorAnimationParams<T>, Track<number[]>, ColorContext>;
+
 export interface GenerateStickerOptions {
     text: string;
-    transformAnimations?: AnimationDescriptor<
-        TransformAnimationType,
-        any,
-        ShapeLayer['ks'],
-        TransformContext
-    >[];
-    letterAnimations?: AnimationDescriptor<
-        LetterAnimationType,
-        any,
-        TransformShape,
-        LetterContext
-    >[];
-    colorAnimations?: AnimationDescriptor<
-        ColorAnimationType,
-        any,
-        Track<number[]>,
-        ColorContext
-    >[];
-    strokeAnimations?: AnimationDescriptor<
-        ColorAnimationType,
-        any,
-        Track<number[]>,
-        ColorContext
-    >[];
-    pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType>[];
+    transformAnimations?: TransformAnimationDescriptor[];
+    letterAnimations?: LetterAnimationDescriptor[];
+    colorAnimations?: ColorAnimationDescriptor[];
+    strokeAnimations?: ColorAnimationDescriptor[];
+    pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
+    /** Имя файла шрифта (в директории fonts) */
+    fontFile?: string;
     width?: number;
     height?: number;
     frameRate?: number;
     duration?: number;
     fontSize?: number;
-    fontPath?: string;
     seed?: number;
     strokeWidth?: number;
     strokeColor?: [number, number, number];

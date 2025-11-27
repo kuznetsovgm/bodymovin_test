@@ -13,6 +13,7 @@ export type PathMorphDescriptor = {
     type: PathMorphAnimationType;
     compose?: ComposeFn<Bezier[], PathMorphContext>;
     priority?: number;
+    params?: any;
 };
 
 export function applyPathMorphAnimations(
@@ -30,6 +31,7 @@ export function applyPathMorphAnimations(
             ctx.duration,
             desc.type,
             ctx.seed,
+            desc.params,
         );
         if (!keyframes) return acc;
         const composed = desc.compose ? desc.compose(acc ?? [], keyframes as any, ctx) : keyframes as any;

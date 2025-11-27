@@ -1,6 +1,7 @@
 import { ShapeLayer } from '../interfaces/lottie';
-import { AnimationDescriptor, TransformAnimationType } from '../domain/types';
+import { TransformAnimationDescriptor, TransformAnimationType } from '../domain/types';
 import { buildLoopKeyframes, buildRawKeyframes, buildValueKeyframes } from '../shared/keyframes';
+import { transformAnimationConfig } from '../config/animation-config';
 
 export type TransformContext = {
     width: number;
@@ -8,18 +9,23 @@ export type TransformContext = {
     duration: number;
 };
 
-type TransformComposeCtx = TransformContext & { desc?: AnimationDescriptor<TransformAnimationType> };
+type TransformComposeCtx = TransformContext & { desc?: TransformAnimationDescriptor };
 
 export type TransformPatch = Partial<ShapeLayer['ks']>;
 
 export function buildTransformPatch(
     type: TransformAnimationType,
     ctx: TransformContext,
+    params?: any,
 ): TransformPatch {
     const { width, height, duration } = ctx;
     switch (type) {
         case TransformAnimationType.SlideLoop: {
-            const amp = width * 0.25;
+            const cfg = {
+                ...transformAnimationConfig[TransformAnimationType.SlideLoop],
+                ...(params ?? {}),
+            };
+            const amp = width * cfg.amplitudeXFactor;
             return {
                 p: {
                     a: 1,
@@ -40,9 +46,27 @@ export function buildTransformPatch(
                     a: 1,
                     k: buildLoopKeyframes(
                         [
-                            [90, 90, 100],
-                            [120, 120, 100],
-                            [90, 90, 100],
+                            [
+                                (params?.minScale ??
+                                    transformAnimationConfig[TransformAnimationType.ScalePulse].minScale),
+                                (params?.minScale ??
+                                    transformAnimationConfig[TransformAnimationType.ScalePulse].minScale),
+                                100,
+                            ],
+                            [
+                                (params?.maxScale ??
+                                    transformAnimationConfig[TransformAnimationType.ScalePulse].maxScale),
+                                (params?.maxScale ??
+                                    transformAnimationConfig[TransformAnimationType.ScalePulse].maxScale),
+                                100,
+                            ],
+                            [
+                                (params?.minScale ??
+                                    transformAnimationConfig[TransformAnimationType.ScalePulse].minScale),
+                                (params?.minScale ??
+                                    transformAnimationConfig[TransformAnimationType.ScalePulse].minScale),
+                                100,
+                            ],
                         ],
                         [0, duration / 2, duration],
                     ),
@@ -52,14 +76,27 @@ export function buildTransformPatch(
             return {
                 r: {
                     a: 1,
-                    k: buildValueKeyframes([0, 360], [0, duration], true),
+                    k: buildValueKeyframes(
+                        [
+                            (params?.fromAngle ??
+                                transformAnimationConfig[TransformAnimationType.RotateContinuous].fromAngle),
+                            (params?.toAngle ??
+                                transformAnimationConfig[TransformAnimationType.RotateContinuous].toAngle),
+                        ],
+                        [0, duration],
+                        true,
+                    ),
                 } as any,
             };
         case TransformAnimationType.ShakeLoop: {
-            const steps = 16,
-                intensity = 20,
-                pts: number[][] = [],
-                times: number[] = [];
+            const cfg = {
+                ...transformAnimationConfig[TransformAnimationType.ShakeLoop],
+                ...(params ?? {}),
+            };
+            const steps = cfg.steps;
+            const intensity = cfg.intensity;
+            const pts: number[][] = [];
+            const times: number[] = [];
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 const off = (f % 2 === 0 ? intensity : -intensity) * (1 - f / steps);
@@ -70,7 +107,11 @@ export function buildTransformPatch(
             return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } as any };
         }
         case TransformAnimationType.Bounce: {
-            const hAmp = height * 0.08;
+            const cfg = {
+                ...transformAnimationConfig[TransformAnimationType.Bounce],
+                ...(params ?? {}),
+            };
+            const hAmp = height * cfg.heightAmplitudeFactor;
             return {
                 p: {
                     a: 1,
@@ -79,7 +120,7 @@ export function buildTransformPatch(
                             [width / 2, height / 2, 0],
                             [width / 2, height / 2 - hAmp, 0],
                             [width / 2, height / 2, 0],
-                            [width / 2, height / 2 - hAmp * 0.5, 0],
+                            [width / 2, height / 2 - hAmp * cfg.secondaryBounceFactor, 0],
                             [width / 2, height / 2, 0],
                         ],
                         [0, duration * 0.25, duration * 0.5, duration * 0.75, duration],
@@ -88,10 +129,14 @@ export function buildTransformPatch(
             };
         }
         case TransformAnimationType.Vibrate: {
-            const steps = 30,
-                intensity = 4,
-                pts: number[][] = [],
-                times: number[] = [];
+            const cfg = {
+                ...transformAnimationConfig[TransformAnimationType.Vibrate],
+                ...(params ?? {}),
+            };
+            const steps = cfg.steps;
+            const intensity = cfg.intensity;
+            const pts: number[][] = [];
+            const times: number[] = [];
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 pts.push([
@@ -114,7 +159,7 @@ function mergeTransform(base: ShapeLayer['ks'], patch: TransformPatch): ShapeLay
 }
 
 export function applyTransformAnimations(
-    descs: AnimationDescriptor<TransformAnimationType>[] | undefined,
+    descs: TransformAnimationDescriptor[] | undefined,
     baseKs: ShapeLayer['ks'],
     ctx: TransformContext,
 ) {

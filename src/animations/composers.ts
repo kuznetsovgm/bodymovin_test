@@ -1,10 +1,21 @@
-import { AnimationDescriptor, ColorAnimationType, TransformAnimationType, ComposeFn } from '../domain/types';
+import {
+    ColorAnimationDescriptor,
+    ColorAnimationType,
+    TransformAnimationDescriptor,
+    TransformAnimationType,
+    ComposeFn,
+} from '../domain/types';
 import { Track, buildRawKeyframes } from '../shared/keyframes';
 import { ShapeLayer } from '../interfaces/lottie';
 import { TransformPatch, buildTransformPatch } from './transform';
 import { ColorContext, buildColorTrack } from './color';
 
-type TransformComposeCtx = { width: number; height: number; duration: number; desc: AnimationDescriptor<TransformAnimationType> };
+type TransformComposeCtx = {
+    width: number;
+    height: number;
+    duration: number;
+    desc: TransformAnimationDescriptor;
+};
 export type TransformCompose = ComposeFn<ShapeLayer['ks'], TransformComposeCtx>;
 
 export type ColorCompose = (
@@ -32,10 +43,13 @@ export function timelineColor(
 }
 
 export function applyTransformsWithCompose(
-    descs: AnimationDescriptor<TransformAnimationType>[] | undefined,
+    descs: TransformAnimationDescriptor[] | undefined,
     baseKs: ShapeLayer['ks'],
     ctx: { width: number; height: number; duration: number },
-    registry?: Record<TransformAnimationType, (ctx: { width: number; height: number; duration: number }) => TransformPatch>,
+    registry?: Record<
+        TransformAnimationType,
+        (ctx: { width: number; height: number; duration: number }, params?: any) => TransformPatch
+    >,
 ) {
     const list = descs && descs.length ? descs : [{ type: TransformAnimationType.None }];
     const sorted = [...list].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
@@ -43,9 +57,9 @@ export function applyTransformsWithCompose(
         const patchBuilder =
             registry && registry[desc.type]
                 ? registry[desc.type]
-                : (localCtx: { width: number; height: number; duration: number }) =>
-                      buildTransformPatch(desc.type, localCtx);
-        const patch: TransformPatch = patchBuilder(ctx);
+                : (localCtx: { width: number; height: number; duration: number }, params?: any) =>
+                      buildTransformPatch(desc.type, localCtx, params);
+        const patch: TransformPatch = patchBuilder(ctx, desc.params);
         const proposed = { ...ks, ...patch };
         const compose = desc.compose as TransformCompose | undefined;
         const ctxWithDesc = { ...ctx, desc };
@@ -54,13 +68,13 @@ export function applyTransformsWithCompose(
 }
 
 export function applyColorsWithCompose(
-    descs: AnimationDescriptor<ColorAnimationType>[] | undefined,
+    descs: ColorAnimationDescriptor[] | undefined,
     baseColor: [number, number, number],
     ctx: ColorContext,
     phase: number = 0,
     registry?: Record<
         ColorAnimationType,
-        (ctx: ColorContext, phase?: number, baseColor?: [number, number, number]) => Track<number[]>
+        (ctx: ColorContext, phase?: number, baseColor?: [number, number, number], params?: any) => Track<number[]>
     >,
 ) {
     const list = descs && descs.length ? descs : [{ type: ColorAnimationType.None }];
@@ -69,9 +83,9 @@ export function applyColorsWithCompose(
         const builder =
             registry && registry[desc.type]
                 ? registry[desc.type]
-                : (c: ColorContext, p?: number, b?: [number, number, number]) =>
-                      buildColorTrack(desc.type, c, p, b);
-        const next = builder(ctx, phase, baseColor);
+                : (c: ColorContext, p?: number, b?: [number, number, number], paramsOverride?: any) =>
+                      buildColorTrack(desc.type, c, p, b, paramsOverride);
+        const next = builder(ctx, phase, baseColor, desc.params);
         const compose = desc.compose as ColorCompose | undefined;
         return compose ? compose(track, next, ctx) : next;
     }, buildColorTrack(ColorAnimationType.None, ctx, 0, baseColor));

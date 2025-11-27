@@ -6,7 +6,7 @@ import { Sticker } from '../interfaces/sticker';
 import {
     applyDefaults,
     DEFAULT_DURATION,
-    DEFAULT_FONT_PATH,
+    DEFAULT_FONT_FILE,
     DEFAULT_FONT_SIZE,
     DEFAULT_FRAME_RATE,
     DEFAULT_HEIGHT,
@@ -21,6 +21,9 @@ import {
     GenerateStickerOptions,
     LetterAnimationType,
     PathMorphAnimationType,
+    TransformAnimationDescriptor,
+    LetterAnimationDescriptor,
+    ColorAnimationDescriptor,
     TransformAnimationType,
 } from '../domain/types';
 import { writeJsonGz, jsonToGzBuffer } from '../shared/fs';
@@ -34,6 +37,7 @@ import { applyTransformsWithCompose, applyColorsWithCompose } from '../animation
 import { ShapeLayer, GroupShapeElement, ShapeType } from '../interfaces/lottie';
 import { transformRegistry, colorRegistry } from '../animations/registry';
 import { applyPathMorphAnimations } from '../animations/pathMorph';
+import { fontAnimationConfig } from '../config/animation-config';
 
 export async function generateSticker(opts: GenerateStickerOptions): Promise<Sticker> {
     const cfg = applyDefaults(opts);
@@ -49,7 +53,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         letterAnimations,
         pathMorphAnimations,
         fontSize = DEFAULT_FONT_SIZE,
-        fontPath = DEFAULT_FONT_PATH,
+        fontFile = DEFAULT_FONT_FILE,
         width = DEFAULT_WIDTH,
         height = DEFAULT_HEIGHT,
         frameRate = DEFAULT_FRAME_RATE,
@@ -59,6 +63,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         fillColor,
         seed = DEFAULT_SEED,
     } = opts;
+    const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
     const fontObj = await loadFont(fontPath);
     const { lines, finalFontSize, layout } = prepareLayout(text, fontObj, fontSize, width, height);
 
@@ -129,10 +134,10 @@ function buildBaseLayer(width: number, height: number, duration: number) {
 function buildLettersGroup(
     layout: ReturnType<typeof layoutText>,
     fontSize: number,
-    colorAnimations: AnimationDescriptor<ColorAnimationType>[] | undefined,
-    strokeAnimations: AnimationDescriptor<ColorAnimationType>[] | undefined,
+    colorAnimations: ColorAnimationDescriptor[] | undefined,
+    strokeAnimations: ColorAnimationDescriptor[] | undefined,
     duration: number,
-    letterAnimations: AnimationDescriptor<LetterAnimationType>[] | undefined,
+    letterAnimations: LetterAnimationDescriptor[] | undefined,
     pathMorphAnimations: AnimationDescriptor<PathMorphAnimationType>[] | undefined,
     canvasHeight: number,
     strokeWidth: number,
@@ -219,7 +224,13 @@ function prepareLayout(
     width: number,
     height: number,
 ) {
-    const { lines, finalFontSize } = wrapAndScaleText(text, font, fontSize, width * 0.85, height * 0.85);
+    const { lines, finalFontSize } = wrapAndScaleText(
+        text,
+        font,
+        fontSize,
+        width * fontAnimationConfig.maxTextWidthFactor,
+        height * fontAnimationConfig.maxTextHeightFactor,
+    );
     const layout = layoutText(lines, font, finalFontSize);
     return { lines, finalFontSize, layout };
 }

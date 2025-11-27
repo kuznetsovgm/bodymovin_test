@@ -1,5 +1,3 @@
-import path from 'path';
-
 import {
     ColorAnimationType,
     GenerateStickerOptions,
@@ -7,14 +5,14 @@ import {
     PathMorphAnimationType,
     TransformAnimationType,
 } from './types';
+import { fontAnimationConfig } from '../config/animation-config';
 
 export const DEFAULT_WIDTH = 512;
 export const DEFAULT_HEIGHT = 512;
 export const DEFAULT_FRAME_RATE = 60;
 export const DEFAULT_DURATION = 180;
-export const DEFAULT_FONT_SIZE = 72;
-export const DEFAULT_FONT_FILE = 'CyrillicRound.ttf';
-export const DEFAULT_FONT_PATH = path.resolve(`./fonts/${DEFAULT_FONT_FILE}`);
+export const DEFAULT_FONT_SIZE = fontAnimationConfig.defaultFontSize;
+export const DEFAULT_FONT_FILE = fontAnimationConfig.defaultFontFile;
 export const DEFAULT_SEED = 1;
 export const DEFAULT_STROKE_WIDTH = 2;
 export const DEFAULT_STROKE_COLOR: [number, number, number] = [0, 0, 0];
@@ -34,7 +32,7 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         frameRate = DEFAULT_FRAME_RATE,
         duration = DEFAULT_DURATION,
         fontSize = DEFAULT_FONT_SIZE,
-        fontPath = DEFAULT_FONT_PATH,
+        fontFile = DEFAULT_FONT_FILE,
         seed = DEFAULT_SEED,
         strokeWidth = DEFAULT_STROKE_WIDTH,
         strokeColor = DEFAULT_STROKE_COLOR,
@@ -53,7 +51,7 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         frameRate,
         duration,
         fontSize,
-        fontPath,
+        fontFile,
         seed,
         strokeWidth,
         strokeColor,
