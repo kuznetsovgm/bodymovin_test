@@ -12,7 +12,7 @@ import {
 } from './index';
 import { StickerConfigManager } from './config-manager';
 import { stickerCache } from './cache';
-import { generateTextSticker, stickerToBuffer } from './pipeline/generateSticker';
+import { generateSticker, stickerToBuffer } from './pipeline/generateSticker';
 import {
     transformAnimationConfig,
     colorAnimationConfig,
@@ -20,14 +20,7 @@ import {
     pathMorphAnimationConfig,
     fontAnimationConfig,
 } from './config/animation-config';
-import {
-    DEFAULT_WIDTH,
-    DEFAULT_HEIGHT,
-    DEFAULT_FRAME_RATE,
-    DEFAULT_DURATION,
-    DEFAULT_FONT_SIZE,
-    DEFAULT_FONT_FILE,
-} from './domain/defaults';
+import { DEFAULT_FRAME_RATE, DEFAULT_DURATION, DEFAULT_FONT_FILE } from './domain/defaults';
 
 const PORT = parseInt(process.env.WEB_PORT || '8080', 10);
 
@@ -274,7 +267,7 @@ async function handlePreview(req: JsonRequest, res: http.ServerResponse) {
             text,
             ...config,
         };
-        const sticker = await generateTextSticker(opts);
+        const sticker = await generateSticker(opts);
         const buffer = await stickerToBuffer(sticker);
         const sizeBytes = buffer.length;
         const sizeKB = Math.round((sizeBytes / 1024) * 100) / 100;
@@ -310,11 +303,8 @@ async function handleMeta(res: http.ServerResponse) {
             PathMorphAnimationType,
         },
         defaults: {
-            width: DEFAULT_WIDTH,
-            height: DEFAULT_HEIGHT,
             frameRate: DEFAULT_FRAME_RATE,
             duration: DEFAULT_DURATION,
-            fontSize: DEFAULT_FONT_SIZE,
             fontFile: DEFAULT_FONT_FILE,
             transformAnimationConfig,
             colorAnimationConfig,

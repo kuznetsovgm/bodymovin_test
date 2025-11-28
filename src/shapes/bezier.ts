@@ -25,10 +25,11 @@ export function buildPathMorphKeyframes(
         morph === PathMorphAnimationType.Warp || morph === PathMorphAnimationType.WarpAiry
             ? pathMorphAnimationConfig[morph].phases
             : [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3];
-    const states =
+    const rawStates =
         morph === PathMorphAnimationType.SkewSwing
             ? buildSwingStates(bez, intensity)
             : phases.map((ph) => applyMorph(bez, morph, intensity, ph, seed));
+    const states = rawStates.map((state) => quantizeBezier(state));
 
     const stateCount = states.length;
     const times = Array.from({ length: stateCount + 1 }, (_, idx) => (idx / stateCount) * duration);
@@ -57,7 +58,7 @@ export function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
         switch (c.type) {
             case 'M':
                 if (v.length > 0) {
-                    contours.push({ c: true, i: inT, o: outT, v });
+                    contours.push(quantizeBezier({ c: true, i: inT, o: outT, v }, 2));
                     inT = [];
                     outT = [];
                     v = [];
@@ -105,7 +106,7 @@ export function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
     }
 
     if (v.length > 0) {
-        contours.push({ c: true, i: inT, o: outT, v });
+        contours.push(quantizeBezier({ c: true, i: inT, o: outT, v }, 2));
     }
 
     return contours;
@@ -279,4 +280,25 @@ function buildSwingStates(bez: Bezier, intensity: number) {
     const amp = skewAmount(intensity) * cfg.swingAmplitudeScale;
     const ks = [amp, 0, -amp, 0];
     return ks.map((k) => skewMorphWithK(bez, k));
+}
+
+const PATH_MORPH_PRECISION = 2;
+
+function quantizeNumber(value: number, decimals = PATH_MORPH_PRECISION) {
+    const factor = Math.pow(10, decimals);
+    return Math.round(value * factor) / factor;
+}
+
+function quantizePoint(point: number[], decimals = PATH_MORPH_PRECISION): number[] {
+    return [quantizeNumber(point[0], decimals), quantizeNumber(point[1], decimals)];
+}
+
+function quantizeBezier(bez: Bezier, decimals = PATH_MORPH_PRECISION): Bezier {
+    const quantizeList = (list: number[][]) => list.map((pt) => quantizePoint(pt, decimals));
+    return {
+        c: bez.c,
+        v: quantizeList(bez.v),
+        i: quantizeList(bez.i),
+        o: quantizeList(bez.o),
+    };
 }

@@ -93,7 +93,7 @@ export function buildTransformPatch(
                 ...transformAnimationConfig[TransformAnimationType.ShakeLoop],
                 ...(params ?? {}),
             };
-            const steps = cfg.steps;
+            const steps = Math.max(4, Math.ceil(cfg.steps * 0.5));
             const intensity = cfg.intensity;
             const pts: number[][] = [];
             const times: number[] = [];
@@ -133,7 +133,7 @@ export function buildTransformPatch(
                 ...transformAnimationConfig[TransformAnimationType.Vibrate],
                 ...(params ?? {}),
             };
-            const steps = cfg.steps;
+            const steps = Math.max(8, Math.ceil(cfg.steps * 0.4));
             const intensity = cfg.intensity;
             const pts: number[][] = [];
             const times: number[] = [];
@@ -150,8 +150,6 @@ export function buildTransformPatch(
         }
         case TransformAnimationType.None:
         default:
-            // При отсутствии трансформаций добавляем лёгкую анимацию масштаба,
-            // чтобы стикер точно считался Telegram анимированным. 
             return {
                 p: {
                     a: 1,

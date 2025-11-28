@@ -23,6 +23,16 @@ export class StickerConfigManager {
         this.redis = redis;
     }
 
+    private sanitizeConfig(config: Omit<GenerateStickerOptions, 'text'>) {
+        const {
+            width: _ignoredWidth,
+            height: _ignoredHeight,
+            fontSize: _ignoredFontSize,
+            ...rest
+        } = config;
+        return rest as Omit<GenerateStickerOptions, 'text'>;
+    }
+
     /**
      * Generate unique ID for a sticker configuration
      */
@@ -39,11 +49,12 @@ export class StickerConfigManager {
         enabled: boolean = true
     ): Promise<string> {
         try {
-            const configId = this.generateConfigId(config);
+            const sanitizedConfig = this.sanitizeConfig(config);
+            const configId = this.generateConfigId(sanitizedConfig);
             const key = `${CONFIG_PREFIX}${configId}`;
 
             // Save config as JSON
-            await this.redis.set(key, JSON.stringify(config));
+            await this.redis.set(key, JSON.stringify(sanitizedConfig));
 
             // Add to enabled set if enabled
             if (enabled) {
@@ -86,7 +97,8 @@ export class StickerConfigManager {
                 return null;
             }
 
-            return JSON.parse(configJson);
+            const parsed = JSON.parse(configJson);
+            return this.sanitizeConfig(parsed);
         } catch (error) {
             console.error('Error getting config:', error);
             return null;
@@ -150,7 +162,7 @@ export class StickerConfigManager {
                 const configJson = await this.redis.get(key);
 
                 if (configJson) {
-                    const config = JSON.parse(configJson);
+                    const config = this.sanitizeConfig(JSON.parse(configJson));
                     results.push({
                         id: configId,
                         config,

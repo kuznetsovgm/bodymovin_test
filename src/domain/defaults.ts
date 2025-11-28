@@ -11,7 +11,6 @@ export const DEFAULT_WIDTH = 512;
 export const DEFAULT_HEIGHT = 512;
 export const DEFAULT_FRAME_RATE = 60;
 export const DEFAULT_DURATION = 180;
-export const DEFAULT_FONT_SIZE = fontAnimationConfig.defaultFontSize;
 export const DEFAULT_FONT_FILE = fontAnimationConfig.defaultFontFile;
 export const DEFAULT_SEED = 1;
 
@@ -25,11 +24,9 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         colorAnimations = [{ type: ColorAnimationType.None }],
         strokeAnimations = [{ type: ColorAnimationType.None }],
         pathMorphAnimations = [{ type: PathMorphAnimationType.None }],
-        width = DEFAULT_WIDTH,
-        height = DEFAULT_HEIGHT,
         frameRate = DEFAULT_FRAME_RATE,
         duration = DEFAULT_DURATION,
-        fontSize = DEFAULT_FONT_SIZE,
+        fontSize,
         fontFile = DEFAULT_FONT_FILE,
         seed = DEFAULT_SEED,
     } = opts;
@@ -41,8 +38,8 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         colorAnimations,
         strokeAnimations,
         pathMorphAnimations,
-        width,
-        height,
+        width: DEFAULT_WIDTH,
+        height: DEFAULT_HEIGHT,
         frameRate,
         duration,
         fontSize,

@@ -7,7 +7,6 @@ import {
     applyDefaults,
     DEFAULT_DURATION,
     DEFAULT_FONT_FILE,
-    DEFAULT_FONT_SIZE,
     DEFAULT_FRAME_RATE,
     DEFAULT_HEIGHT,
     DEFAULT_SEED,
@@ -50,7 +49,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         strokeAnimations,
         letterAnimations,
         pathMorphAnimations,
-        fontSize = DEFAULT_FONT_SIZE,
+        fontSize,
         fontFile = DEFAULT_FONT_FILE,
         width = DEFAULT_WIDTH,
         height = DEFAULT_HEIGHT,
@@ -58,9 +57,16 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         duration = DEFAULT_DURATION,
         seed = DEFAULT_SEED,
     } = opts;
+    const resolvedFontSize = resolveFontSize(text, fontSize, width, height);
     const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
     const fontObj = await loadFont(fontPath);
-    const { lines, finalFontSize, layout } = prepareLayout(text, fontObj, fontSize, width, height);
+    const { finalFontSize, layout } = prepareLayout(
+        text,
+        fontObj,
+        resolvedFontSize,
+        width,
+        height,
+    );
 
     const layer = buildBaseLayer(width, height, duration);
     layer.ks = applyTransformsWithCompose(
@@ -207,7 +213,40 @@ function prepareLayout(
         height * fontAnimationConfig.maxTextHeightFactor,
     );
     const layout = layoutText(lines, font, finalFontSize);
-    return { lines, finalFontSize, layout };
+    return { finalFontSize, layout };
+}
+
+function resolveFontSize(
+    text: string,
+    requestedFontSize: number | undefined,
+    width: number,
+    height: number,
+) {
+    if (typeof requestedFontSize === 'number' && requestedFontSize > 0) {
+        return requestedFontSize;
+    }
+    return computeAutoFontSize(text, width, height);
+}
+
+function computeAutoFontSize(text: string, width: number, height: number) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return Math.min(height, width) * 0.5;
+    }
+    const lettersOnly = trimmed.replace(/\s+/g, '');
+    const whitespaceCount = trimmed.length - lettersOnly.length;
+    const effectiveGlyphs = Math.max(1, lettersOnly.length + whitespaceCount * 0.4);
+    const availableWidth = width * fontAnimationConfig.maxTextWidthFactor;
+    const availableHeight = height * fontAnimationConfig.maxTextHeightFactor;
+    const targetArea = availableWidth * availableHeight * 0.85;
+    const estimated = Math.sqrt(targetArea / effectiveGlyphs);
+    const minSize = 32;
+    const maxSize = availableHeight;
+    return clamp(estimated, minSize, maxSize);
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
 }
 
 function buildStickerShell(

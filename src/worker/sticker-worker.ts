@@ -40,7 +40,6 @@ parentPort.on('message', async (message: WorkerTaskMessage) => {
         // Generate sticker with the provided configuration
         const sticker = await generateSticker({
             text: task.text,
-            fontSize: 72,
             frameRate: 60,
             duration: 180,
             ...task.variant,
