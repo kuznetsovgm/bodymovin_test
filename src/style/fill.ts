@@ -34,29 +34,6 @@ export function createFill(
                 nm: 'Fill RGB Cycle',
                 hd: false,
             };
-        case ColorAnimationType.Pulse:
-            return {
-                cix,
-                ty: ShapeType.Fill,
-                c: {
-                    a: 1,
-                    k: buildRawKeyframes(
-                        [
-                            [1, 1, 1, 1],
-                            [1, 0.7, 0.2, 1],
-                            [1, 1, 1, 1],
-                        ],
-                        [0, duration / 2, duration],
-                        true,
-                    ),
-                    ix: 5,
-                },
-                o: { a: 0, k: 100 },
-                r: 1,
-                bm: 0,
-                nm: 'Fill Pulse',
-                hd: false,
-            };
         case ColorAnimationType.Rainbow: {
             const colors = [
                 [1, 0, 0, 1],

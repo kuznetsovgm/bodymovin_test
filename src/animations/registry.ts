@@ -10,7 +10,8 @@ export const transformRegistry: Record<
     TransformAnimationType,
     (ctx: { width: number; height: number; duration: number }, params?: any) => TransformPatch
 > = {
-    [TransformAnimationType.None]: () => ({}),
+    [TransformAnimationType.None]: (ctx, params) =>
+        buildTransformPatch(TransformAnimationType.None, ctx, params),
     [TransformAnimationType.SlideLoop]: (ctx, params) =>
         buildTransformPatch(TransformAnimationType.SlideLoop, ctx, params),
     [TransformAnimationType.ScalePulse]: (ctx, params) =>
@@ -33,12 +34,8 @@ export const colorRegistry: Record<
         buildColorTrack(ColorAnimationType.None, ctx, _phase, base, params),
     [ColorAnimationType.CycleRGB]: (ctx, phase = 0, base = [1, 1, 1], params) =>
         buildColorTrack(ColorAnimationType.CycleRGB, ctx, phase, base, params),
-    [ColorAnimationType.Pulse]: (ctx, phase = 0, base = [1, 1, 1], params) =>
-        buildColorTrack(ColorAnimationType.Pulse, ctx, phase, base, params),
     [ColorAnimationType.Rainbow]: (ctx, phase = 0, base = [1, 1, 1], params) =>
         buildColorTrack(ColorAnimationType.Rainbow, ctx, phase, base, params),
-    [ColorAnimationType.TransparencyPulse]: (ctx, phase = 0, base = [1, 1, 1], params) =>
-        buildColorTrack(ColorAnimationType.TransparencyPulse, ctx, phase, base, params),
 };
 
 export const letterRegistry: Record<LetterAnimationType, (ctx: LetterContext, params?: any) => ShapeLayer['ks']> = {

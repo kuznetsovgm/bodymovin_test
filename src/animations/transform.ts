@@ -37,7 +37,7 @@ export function buildTransformPatch(
                         ],
                         [0, duration / 2, duration],
                     ),
-                } as any,
+                },
             };
         }
         case TransformAnimationType.ScalePulse:
@@ -70,7 +70,7 @@ export function buildTransformPatch(
                         ],
                         [0, duration / 2, duration],
                     ),
-                } as any,
+                },
             };
         case TransformAnimationType.RotateContinuous:
             return {
@@ -104,7 +104,7 @@ export function buildTransformPatch(
                 times.push(t);
             }
             pts[pts.length - 1] = [width / 2, height / 2, 0];
-            return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } as any };
+            return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } };
         }
         case TransformAnimationType.Bounce: {
             const cfg = {
@@ -125,7 +125,7 @@ export function buildTransformPatch(
                         ],
                         [0, duration * 0.25, duration * 0.5, duration * 0.75, duration],
                     ),
-                } as any,
+                },
             };
         }
         case TransformAnimationType.Vibrate: {
@@ -146,11 +146,24 @@ export function buildTransformPatch(
                 ]);
                 times.push(t);
             }
-            return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } as any };
+            return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } };
         }
         case TransformAnimationType.None:
         default:
-            return {};
+            // При отсутствии трансформаций добавляем лёгкую анимацию масштаба,
+            // чтобы стикер точно считался Telegram анимированным. 
+            return {
+                p: {
+                    a: 1,
+                    k: buildLoopKeyframes(
+                        [
+                            [width / 2, height / 2, 0],
+                            [width / 2, height / 2, 0],
+                        ],
+                        [0, duration],
+                    ),
+                },
+            };
     }
 }
 
@@ -168,11 +181,11 @@ export function applyTransformAnimations(
         .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
         .reduce((ks, desc) => {
             const patch = buildTransformPatch(desc.type, ctx);
-        const composed = desc.compose
-            ? desc.compose(ks, mergeTransform(ks, patch), ctx)
-            : mergeTransform(ks, patch);
-        return composed;
-    }, { ...baseKs });
+            const composed = desc.compose
+                ? desc.compose(ks, mergeTransform(ks, patch), ctx)
+                : mergeTransform(ks, patch);
+            return composed;
+        }, { ...baseKs });
 }
 
 // Compose helper for layer transforms (blends base and next tracks)

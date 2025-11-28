@@ -7,12 +7,14 @@
     "start": "tsc && node -r dotenv/config ./dist/index.js",
     "bot": "tsc && node -r dotenv/config ./dist/bot.js",
     "init-configs": "tsc && node -r dotenv/config ./dist/init-configs.js",
+    "web": "tsc && node -r dotenv/config ./dist/web-server.js",
     "watch": "nodemon -r dotenv/config index.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@lottiefiles/lottie-player": "^2.0.12",
     "dotenv": "^16.3.1",
     "ioredis": "^5.8.2",
     "lottie-web": "^5.13.0",

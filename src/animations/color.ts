@@ -30,43 +30,6 @@ export function buildColorTrack(
                 ),
             };
         }
-        case ColorAnimationType.Pulse:
-            return {
-                a: 1,
-                k: buildRawKeyframes(
-                    [
-                        [...baseColor, 1],
-                        [
-                            ...baseColor.map(
-                                (c: number) =>
-                                    c *
-                                    (params?.darkenFactor ??
-                                        colorAnimationConfig[ColorAnimationType.Pulse].darkenFactor),
-                            ) as [number, number, number],
-                            1,
-                        ],
-                        [...baseColor, 1],
-                    ],
-                    [0, duration / 2, duration],
-                    params?.loop ?? colorAnimationConfig[ColorAnimationType.Pulse].loop,
-                ),
-            };
-        case ColorAnimationType.TransparencyPulse: {
-            const cfg = {
-                ...colorAnimationConfig[ColorAnimationType.TransparencyPulse],
-                ...(params ?? {}),
-            };
-            const times = cfg.times.map((t: number) => t * duration);
-            // Используем цвета из конфига, но с базовым цветом по RGB
-            const colors = cfg.colors.map((c: [number, number, number, number]) => {
-                const alpha = c[3];
-                return [...baseColor, alpha] as [number, number, number, number];
-            });
-            return {
-                a: 1,
-                k: buildRawKeyframes(colors, times, cfg.loop),
-            };
-        }
         case ColorAnimationType.Rainbow: {
             const cfg = {
                 ...colorAnimationConfig[ColorAnimationType.Rainbow],
@@ -90,17 +53,22 @@ export function buildColorTrack(
             };
         }
         case ColorAnimationType.None:
-        default:
+        default: {
+            const cfg = {
+                ...colorAnimationConfig[ColorAnimationType.None],
+                ...(params ?? {}),
+            };
             return {
                 a: 1,
                 k: buildRawKeyframes(
                     [
-                        [...baseColor, 1],
-                        [...baseColor, 1],
+                        [...(params?.baseColor ?? baseColor), 1],
+                        [...(params?.baseColor ?? baseColor), 1],
                     ],
                     [0, duration],
-                    params?.loop ?? colorAnimationConfig[ColorAnimationType.None].loop,
+                    cfg.loop ?? false,
                 ),
             };
+        }
     }
 }

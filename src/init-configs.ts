@@ -18,206 +18,373 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        strokeAnimations: [{ type: ColorAnimationType.TransparencyPulse }],
-        strokeColor: [1, 0.1, 0.1],
-        strokeWidth: 3,
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: {
+                    baseColor: [1, 0.1, 0.1],
+                    strokeWidth: 3,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: {
+                    baseColor: [0, 0, 0],
+                    strokeWidth: 2,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: {
+                    baseColor: [1, 1, 1],
+                },
+            },
+        ],
         pathMorphAnimations: [{ type: PathMorphAnimationType.WarpAiry }],
-        fillColor: [1, 1, 1],
-        strokeWidth: 1,
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
-        fillColor: [0.5, 0.5, 1],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: {
+                    baseColor: [0.5, 0.5, 1],
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        fillColor: [0, 0, 0],
-        strokeColor: [1, 1, 1],
-        strokeWidth: 4,
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.None,
+                params: {
+                    colors: [
+                        [1, 1, 1, 1],
+                        [1, 1, 1, 1],
+                    ],
+                    times: [0, 1],
+                    loop: false,
+                    strokeWidth: 4,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: {
+                    baseColor: [1, 1, 1],
+                },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [1, 1, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: {
+                    baseColor: [0.08, 0.08, 0.08],
+                },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        strokeAnimations: [{ type: ColorAnimationType.None }],
-        fillColor: [0.08, 0.08, 0.08],
-        strokeWidth: 2,
-        strokeColor: [1, 1, 1],
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.None,
+                params: {
+                    colors: [
+                        [1, 1, 1, 1],
+                        [1, 1, 1, 1],
+                    ],
+                    times: [0, 1],
+                    loop: false,
+                    strokeWidth: 2,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        fillColor: [0.9, 0.95, 1],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.None,
+                params: {
+                    colors: [
+                        [0.9, 0.95, 1, 1],
+                        [0.9, 0.95, 1, 1],
+                    ],
+                    times: [0, 1],
+                    loop: false,
+                },
+            },
+        ],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: { baseColor: [1, 1, 1] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        fillColor: [1, 1, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [0.95, 0.95, 0.95] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [0.95, 0.95, 0.95],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         letterAnimations: [{ type: LetterAnimationType.Rotate }],
-        fillColor: [1, 1, 1],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.None,
+                params: {
+                    colors: [
+                        [1, 1, 1, 1],
+                        [1, 1, 1, 1],
+                    ],
+                    times: [0, 1],
+                    loop: false,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: { baseColor: [1, 1, 1] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        fillColor: [1, 1, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: { baseColor: [1, 0.9, 0.9] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        fillColor: [1, 0.9, 0.9],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Vibrate }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [0.85, 1, 0.85] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        fillColor: [0.85, 1, 0.85],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
-        fillColor: [0, 0.7, 1],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: { baseColor: [0, 0.7, 1] },
+            },
+        ],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-        strokeColor: [1, 1, 1],
-        fillColor: [0.2, 0.2, 0.2],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [0.2, 0.2, 0.2] },
+            },
+        ],
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: {
+                    baseColor: [1, 1, 1],
+                    strokeWidth: 2,
+                },
+            },
+        ],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
-        fillColor: [1, 1, 1],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.None,
+                params: {
+                    colors: [
+                        [1, 1, 1, 1],
+                        [1, 1, 1, 1],
+                    ],
+                    times: [0, 1],
+                    loop: false,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [1, 1, 1] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [1, 1, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
-        colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [0.95, 0.9, 0.8] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Rotate }],
-        fillColor: [0.95, 0.9, 0.8],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Rainbow }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: { baseColor: [0.96, 0.96, 0.96] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-        fillColor: [0.96, 0.96, 0.96],
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: {
+                    baseColor: [0.2, 0.2, 0.2],
+                    strokeWidth: 2,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [1, 0.9, 0.6] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        fillColor: [1, 0.9, 0.6],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [0.9, 1, 0.9],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
         colorAnimations: [{ type: ColorAnimationType.CycleRGB }],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        fillColor: [0.9, 0.9, 1],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewSwing }],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ShakeLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [0.1, 0.1, 0.1] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Vibrate }],
-        strokeAnimations: [{ type: ColorAnimationType.Pulse }],
-        strokeWidth: 2,
-        strokeColor: [0.2, 0.6, 1],
-        fillColor: [0.1, 0.1, 0.1],
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: {
+                    baseColor: [0.2, 0.6, 1],
+                    strokeWidth: 2,
+                },
+            },
+        ],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.Bounce }],
         letterAnimations: [{ type: LetterAnimationType.Rotate }],
-        fillColor: [0.9, 0.85, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.TypingFall }],
-        fillColor: [0.8, 0.95, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.SlideLoop }],
-        colorAnimations: [{ type: ColorAnimationType.Pulse }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: { baseColor: [0.95, 0.95, 0.95] },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.ZigZag }],
-        strokeAnimations: [{ type: ColorAnimationType.Pulse }],
-        strokeWidth: 2,
-        strokeColor: [0, 0.5, 1],
-        fillColor: [0.95, 0.95, 0.95],
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.CycleRGB,
+                params: {
+                    baseColor: [0, 0.5, 1],
+                    strokeWidth: 2,
+                },
+            },
+        ],
         pathMorphAnimations: [{ type: PathMorphAnimationType.SkewPulse }],
     },
     {
@@ -225,17 +392,33 @@ const DEFAULT_STICKER_VARIANTS: Omit<GenerateStickerOptions, 'text'>[] = [
         transformAnimations: [{ type: TransformAnimationType.RotateContinuous }],
         colorAnimations: [{ type: ColorAnimationType.Rainbow }],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        fillColor: [1, 1, 1],
     },
     {
         ...BASE_STICKER_DEFAULTS,
         transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
-        colorAnimations: [{ type: ColorAnimationType.None }],
+        colorAnimations: [
+            {
+                type: ColorAnimationType.None,
+                params: {
+                    colors: [
+                        [1, 1, 1, 1],
+                        [1, 1, 1, 1],
+                    ],
+                    times: [0, 1],
+                    loop: false,
+                },
+            },
+        ],
         letterAnimations: [{ type: LetterAnimationType.Wave }],
-        strokeAnimations: [{ type: ColorAnimationType.Rainbow }],
-        strokeWidth: 2,
-        strokeColor: [1, 1, 1],
-        fillColor: [0.06, 0.06, 0.06],
+        strokeAnimations: [
+            {
+                type: ColorAnimationType.Rainbow,
+                params: {
+                    baseColor: [1, 1, 1],
+                    strokeWidth: 2,
+                },
+            },
+        ],
     },
 ];
 

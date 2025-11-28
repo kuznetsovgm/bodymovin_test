@@ -131,7 +131,12 @@ export class StickerConfigManager {
     }>> {
         try {
             const pattern = `${CONFIG_PREFIX}*`;
-            const keys = await this.redis.keys(pattern);
+            const keys = (await this.redis.keys(pattern)).filter(
+                (key) =>
+                    key !== CONFIG_ENABLED_SET &&
+                    key !== UPLOAD_CHAT_IDS_KEY &&
+                    key !== DEBOUNCE_DELAY_KEY,
+            );
             const enabledIds = new Set(await this.redis.smembers(CONFIG_ENABLED_SET));
 
             const results: Array<{

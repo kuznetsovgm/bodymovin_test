@@ -14,8 +14,6 @@ export const DEFAULT_DURATION = 180;
 export const DEFAULT_FONT_SIZE = fontAnimationConfig.defaultFontSize;
 export const DEFAULT_FONT_FILE = fontAnimationConfig.defaultFontFile;
 export const DEFAULT_SEED = 1;
-export const DEFAULT_STROKE_WIDTH = 2;
-export const DEFAULT_STROKE_COLOR: [number, number, number] = [0, 0, 0];
 
 export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateStickerOptions {
     if (!opts.text) {
@@ -34,9 +32,6 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         fontSize = DEFAULT_FONT_SIZE,
         fontFile = DEFAULT_FONT_FILE,
         seed = DEFAULT_SEED,
-        strokeWidth = DEFAULT_STROKE_WIDTH,
-        strokeColor = DEFAULT_STROKE_COLOR,
-        fillColor,
     } = opts;
 
     return {
@@ -53,8 +48,5 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         fontSize,
         fontFile,
         seed,
-        strokeWidth,
-        strokeColor,
-        fillColor,
     };
 }

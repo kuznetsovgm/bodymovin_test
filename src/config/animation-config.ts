@@ -77,22 +77,15 @@ export type ColorKeyframeTrackConfig = {
     loop: boolean;
 };
 
-export type PulseColorConfig = {
-    /** Множитель яркости для "сжатого" состояния (0..1) */
-    darkenFactor: number;
-    loop: boolean;
-};
-
 export type NoneColorConfig = {
+    /** Зацикливать ли статичный цвет (обычно false) */
     loop: boolean;
 };
 
 export type ColorAnimationConfig = {
     [ColorAnimationType.None]: NoneColorConfig;
     [ColorAnimationType.CycleRGB]: ColorKeyframeTrackConfig;
-    [ColorAnimationType.Pulse]: PulseColorConfig;
     [ColorAnimationType.Rainbow]: ColorKeyframeTrackConfig;
-    [ColorAnimationType.TransparencyPulse]: ColorKeyframeTrackConfig;
 };
 
 export const colorAnimationConfig: ColorAnimationConfig = {
@@ -109,10 +102,6 @@ export const colorAnimationConfig: ColorAnimationConfig = {
         times: [0, 1 / 3, 2 / 3, 1],
         loop: true,
     },
-    [ColorAnimationType.Pulse]: {
-        darkenFactor: 0.7,
-        loop: true,
-    },
     [ColorAnimationType.Rainbow]: {
         colors: [
             [1, 0, 0, 1],
@@ -126,15 +115,6 @@ export const colorAnimationConfig: ColorAnimationConfig = {
             [1, 0, 0, 1],
         ],
         times: [0, 1 / 8, 2 / 8, 3 / 8, 4 / 8, 5 / 8, 6 / 8, 7 / 8, 1],
-        loop: true,
-    },
-    [ColorAnimationType.TransparencyPulse]: {
-        colors: [
-            [1, 1, 1, 0],
-            [1, 1, 1, 1],
-            [1, 1, 1, 0],
-        ],
-        times: [0, 0.5, 1],
         loop: true,
     },
 };
@@ -304,4 +284,3 @@ export const fontAnimationConfig: FontAnimationConfig = {
     maxTextHeightFactor: 0.85,
     fontDirectory: './fonts',
 };
-

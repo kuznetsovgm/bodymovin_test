@@ -23,9 +23,7 @@ export enum TransformAnimationType {
 export enum ColorAnimationType {
     None = 'none',
     CycleRGB = 'cycleRGB',
-    Pulse = 'pulse',
     Rainbow = 'rainbow',
-    TransparencyPulse = 'transparencyPulse',
 }
 
 export enum LetterAnimationType {
@@ -75,7 +73,12 @@ export type TransformAnimationParams<T extends TransformAnimationType = Transfor
     TransformAnimationConfig[T];
 
 export type ColorAnimationParams<T extends ColorAnimationType = ColorAnimationType> =
-    ColorAnimationConfig[T];
+    Partial<ColorAnimationConfig[T]> & {
+        /** Базовый цвет для данной анимации */
+        baseColor?: [number, number, number];
+        /** Толщина обводки, если анимация применяется к stroke */
+        strokeWidth?: number;
+    };
 
 export type LetterAnimationParams<T extends LetterAnimationType = LetterAnimationType> =
     LetterAnimationConfig[T];
@@ -112,7 +115,4 @@ export interface GenerateStickerOptions {
     duration?: number;
     fontSize?: number;
     seed?: number;
-    strokeWidth?: number;
-    strokeColor?: [number, number, number];
-    fillColor?: [number, number, number];
 }

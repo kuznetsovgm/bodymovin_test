@@ -38,32 +38,6 @@ export function createStroke(
                 nm: 'Stroke RGB Cycle',
                 hd: false,
             };
-        case ColorAnimationType.Pulse:
-            return {
-                cix,
-                ty: ShapeType.Stroke,
-                c: {
-                    a: 1,
-                    k: buildRawKeyframes(
-                        [
-                            [1, 1, 1, 1],
-                            [1, 0.7, 0.2, 1],
-                            [1, 1, 1, 1],
-                        ],
-                        [0, duration / 2, duration],
-                        true,
-                    ),
-                    ix: 5,
-                },
-                o: { a: 0, k: 100 },
-                w: { a: 0, k: strokeWidth },
-                lc: LineCapType.Round,
-                lj: LineJoinType.Round,
-                ml: 4,
-                bm: 0,
-                nm: 'Stroke Pulse',
-                hd: false,
-            };
         case ColorAnimationType.Rainbow: {
             const colors = [
                 [1, 0, 0, 1],

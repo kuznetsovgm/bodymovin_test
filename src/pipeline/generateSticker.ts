@@ -11,8 +11,6 @@ import {
     DEFAULT_FRAME_RATE,
     DEFAULT_HEIGHT,
     DEFAULT_SEED,
-    DEFAULT_STROKE_COLOR,
-    DEFAULT_STROKE_WIDTH,
     DEFAULT_WIDTH,
 } from '../domain/defaults';
 import {
@@ -58,9 +56,6 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         height = DEFAULT_HEIGHT,
         frameRate = DEFAULT_FRAME_RATE,
         duration = DEFAULT_DURATION,
-        strokeWidth = DEFAULT_STROKE_WIDTH,
-        strokeColor = DEFAULT_STROKE_COLOR,
-        fillColor,
         seed = DEFAULT_SEED,
     } = opts;
     const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
@@ -88,9 +83,6 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         letterAnimations,
         pathMorphAnimations,
         height,
-        strokeWidth,
-        strokeColor,
-        fillColor,
         seed,
     );
     layer.shapes.push(lettersGroup);
@@ -140,9 +132,6 @@ function buildLettersGroup(
     letterAnimations: LetterAnimationDescriptor[] | undefined,
     pathMorphAnimations: AnimationDescriptor<PathMorphAnimationType>[] | undefined,
     canvasHeight: number,
-    strokeWidth: number,
-    strokeColor: [number, number, number],
-    fillColor: [number, number, number] | undefined,
     seed: number,
 ): GroupShapeElement {
     const totalLetters = layout.length || 1;
@@ -157,17 +146,6 @@ function buildLettersGroup(
     };
 
     // Layer-level style (applied once per group)
-    const baseStyles = buildLetterStyles(colorAnimations, strokeAnimations, {
-        duration,
-        strokeWidth,
-        strokeColor,
-        fillColor,
-        letterPhase: 0,
-        letterIndex: -1,
-    });
-    if (baseStyles.fill) group.it.push(baseStyles.fill);
-    if (baseStyles.stroke) group.it.push(baseStyles.stroke);
-
     for (const glyphInfo of layout) {
         const { char: ch, glyph, x, y, letterIndex } = glyphInfo;
         const pathShapes = glyphToShapes(glyph, ch, letterIndex, {
@@ -190,9 +168,6 @@ function buildLettersGroup(
         const phase = (totalLetters - 1 - letterIndex) / totalLetters;
         const styles = buildLetterStyles(colorAnimations, strokeAnimations, {
             duration,
-            strokeWidth,
-            strokeColor,
-            fillColor,
             letterPhase: phase,
             letterIndex,
         });
