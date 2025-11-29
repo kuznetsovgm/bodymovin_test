@@ -360,6 +360,15 @@ const server = http.createServer(async (req: JsonRequest, res) => {
             return;
         }
 
+        const needsSecretSlashRedirect =
+            SECRET_PATH !== '/' && url.pathname === SECRET_PATH && !url.pathname.endsWith('/');
+        if (needsSecretSlashRedirect) {
+            res.statusCode = 302;
+            res.setHeader('Location', `${SECRET_PATH}/`);
+            res.end();
+            return;
+        }
+
         if (relativePath.startsWith('/api/')) {
             if (relativePath === '/api/configs' && method === 'GET') {
                 await handleGetConfigs(res);
