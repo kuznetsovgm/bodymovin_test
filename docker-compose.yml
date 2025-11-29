@@ -167,7 +167,6 @@ services:
       - REDIS_URL=redis://redis:6379
     command: node -r dotenv/config ./dist/web-server.js
     volumes:
-      - ./public:/app/public
       - ./fonts:/app/fonts
     networks:
       - bodymovin-net

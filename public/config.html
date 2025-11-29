@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Конфигуратор стикеров</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="config.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>Конфигуратор вариантов стикеров</h1>
+        </header>
+        <main class="layout">
+            <section class="sidebar">
+                <div class="toolbar">
+                    <button id="newVariantBtn">Новый вариант</button>
+                    <button id="refreshBtn">Обновить</button>
+                </div>
+                <div id="variantsList" class="variants-list">
+                    <div class="variants-scroll"></div>
+                </div>
+            </section>
+            <section class="content">
+                <div class="form-section">
+                    <h2>Параметры варианта</h2>
+                    <div class="field-group">
+                        <label>
+                            Текст предпросмотра
+                            <input id="previewText" type="text" value="Пример текста">
+                        </label>
+                    </div>
+                    <div class="grid grid-3">
+                        <label title="Частота кадров анимации (FPS)">
+                            FPS
+                            <select id="frameRate">
+                                <option value="30">30</option>
+                                <option value="60" selected>60</option>
+                            </select>
+                        </label>
+                        <label title="Длительность в кадрах (ip..op)">
+                            Длительность (кадры)
+                            <div class="slider-with-input">
+                                <input id="durationSlider" type="range" min="2" max="180" step="1">
+                                <input id="duration" type="number" min="2" step="1">
+                           </div>
+                       </label>
+                        <label title="Файл шрифта из каталога fonts">
+                            Имя файла шрифта
+                            <select id="fontFile"></select>
+                        </label>
+                    </div>
+
+                    <div class="animations">
+                        <h3>Трансформация</h3>
+                        <div class="grid grid-3">
+                            <label>
+                                Тип
+                                <select id="transformType"></select>
+                            </label>
+                            <div id="transformParams" class="params"></div>
+                        </div>
+
+                        <h3>Цвет заливки</h3>
+                        <div class="grid grid-3">
+                            <label>
+                                Тип
+                                <select id="colorType"></select>
+                            </label>
+                            <div id="colorParams" class="params"></div>
+                        </div>
+
+                        <h3>Цвет обводки</h3>
+                        <div class="grid grid-3">
+                            <label>
+                                Тип
+                                <select id="strokeType"></select>
+                            </label>
+                            <div id="strokeParams" class="params"></div>
+                        </div>
+
+                        <h3>Анимация букв</h3>
+                        <div class="grid grid-3">
+                            <label>
+                                Тип
+                                <select id="letterType"></select>
+                            </label>
+                            <div>
+                                <div id="letterParams" class="params"></div>
+                                <div id="letterWarning" class="warning-message"></div>
+                            </div>
+                        </div>
+
+                        <h3>Морфинг контура</h3>
+                        <div class="grid grid-3">
+                            <label>
+                                Тип
+                                <select id="pathMorphType"></select>
+                            </label>
+                            <div>
+                                <div id="pathMorphParams" class="params"></div>
+                                <div id="pathWarning" class="warning-message"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <label class="checkbox">
+                            <input id="enabled" type="checkbox" checked>
+                            Включен
+                        </label>
+                        <button id="previewBtn">Предпросмотр</button>
+                        <button id="saveBtn">Сохранить в БД</button>
+                        <span id="status" class="status"></span>
+                    </div>
+                </div>
+
+                <div class="preview-section">
+                    <h2>Предпросмотр</h2>
+                    <div id="previewContainer" class="preview-container">
+                        <canvas id="previewCanvas" width="512" height="512"></canvas>
+                    </div>
+                    <div class="preview-info">
+                        <span>Размер файла: <strong id="sizeLabel">—</strong></span>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module">
+        import { DotLottie } from 'https://cdn.jsdelivr.net/npm/@lottiefiles/dotlottie-web/+esm';
+        window.DotLottie = DotLottie;
+    </script>
+    <script src="config.js"></script>
+</body>
+</html>
