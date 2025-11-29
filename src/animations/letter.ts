@@ -11,6 +11,12 @@ export type LetterContext = {
     canvasHeight: number;
 };
 
+// Registry for string-based compose identifiers for letter animations
+const letterComposeRegistry: Record<string, ComposeFn<TransformShape, LetterContext>> = {
+    add: additiveLetterTransform(),
+    blend: blendLetterTransform(0.5),
+};
+
 function createBaseTransform(index: number, x: number, y: number): TransformShape {
     return {
         cix: 200 + index,
@@ -152,7 +158,12 @@ export function applyLetterAnimations(
     return sorted.reduce<TransformShape | null>((acc, desc) => {
         const next = buildLetterTransform(desc.type, ctx, desc.params);
         if (!acc) return next;
-        const compose = desc.compose as ComposeFn<TransformShape, LetterContext> | undefined;
+        let compose: ComposeFn<TransformShape, LetterContext> | undefined;
+        if (typeof desc.compose === 'string') {
+            compose = letterComposeRegistry[desc.compose] as ComposeFn<TransformShape, LetterContext> | undefined;
+        } else {
+            compose = desc.compose as ComposeFn<TransformShape, LetterContext> | undefined;
+        }
         return compose ? compose(acc, next, ctx) : next;
     }, null) as TransformShape;
 }
@@ -239,10 +250,11 @@ export function blendLetterTransform(weightNext: number) {
 // Sum numeric/vector components where возможно, иначе берёт next
 export function additiveLetterTransform() {
     return (base: TransformShape, next: TransformShape) => {
-        const sumNum = (a: number, b: number) => a + b;
+        const sumNum = (a: number, b: number) => (a + b) / 2;
         const sumVec = (a: number[] | undefined, b: number[] | undefined) => {
             if (!a || !b) return b ?? a;
-            return a.map((v, i) => v + (b[i] ?? 0));
+            const len = Math.min(a.length, b.length);
+            return Array.from({ length: len }, (_, i) => ((a[i] ?? 0) + (b[i] ?? 0)) / 2);
         };
         const addProp = (bp: any, np: any) => {
             if (!np && !bp) return undefined;

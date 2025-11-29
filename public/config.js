@@ -959,7 +959,7 @@
 
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
-            removeBtn.textContent = '−';
+            removeBtn.textContent = '− убрать';
             removeBtn.className = 'small-button';
             removeBtn.addEventListener('click', () => {
                 row.remove();
@@ -1131,6 +1131,228 @@
         select.appendChild(opt);
     }
 
+    // ---- Дополнительные анимации (индексы >= 1 в массивах) ----
+
+    function cloneSelectOptions(sourceSelect, targetSelect) {
+        targetSelect.innerHTML = '';
+        Array.from(sourceSelect.options).forEach((opt) => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.textContent;
+            o.disabled = opt.disabled;
+            targetSelect.appendChild(o);
+        });
+    }
+
+    function renderExtraParams(kind, type, container, desc) {
+        container.innerHTML = '';
+        if (!type) return;
+
+        if (kind === 'transform') {
+            renderParams(
+                container,
+                transformSchema[type] || {},
+                desc && desc.params,
+                transformParamMeta[type] || null,
+                getTransformDefaults(type),
+            );
+            return;
+        }
+        if (kind === 'letter') {
+            renderParams(
+                container,
+                letterSchema[type] || {},
+                desc && desc.params,
+                letterParamMeta[type] || null,
+                getLetterDefaults(type),
+            );
+            return;
+        }
+        if (kind === 'pathMorph') {
+            renderParams(
+                container,
+                pathMorphSchema[type] || {},
+                desc && desc.params,
+                pathMorphParamMeta[type] || null,
+                getPathMorphDefaults(type),
+            );
+            return;
+        }
+        if (kind === 'color' || kind === 'stroke') {
+            const descForUi = desc && desc.type ? desc : desc && type ? { ...desc, type } : { type };
+            const values = normalizeColorParamsForUi(descForUi, undefined, {
+                isStroke: kind === 'stroke',
+                isStatic: type === 'none',
+            });
+            renderColorParams(container, type, values, { isStroke: kind === 'stroke' });
+        }
+    }
+
+    function renderExtraAnimations(containerId, sourceSelectId, descs, kind) {
+        const container = $(containerId);
+        const sourceSelect = $(sourceSelectId);
+        if (!container || !sourceSelect) return;
+
+        container.innerHTML = '';
+
+        const header = document.createElement('div');
+        header.className = 'extra-animations-header';
+        const title = document.createElement('span');
+        title.className = 'extra-animations-title';
+        title.textContent = 'Дополнительные анимации (индексы 1, 2, …)';
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.textContent = '+ Добавить';
+        addBtn.className = 'small-button';
+        header.appendChild(title);
+        header.appendChild(addBtn);
+
+        const rowsWrap = document.createElement('div');
+        rowsWrap.className = 'extra-rows';
+
+        function makeRow(desc) {
+            const row = document.createElement('div');
+            row.className = 'grid grid-3 extra-row';
+            row.dataset.descriptor = JSON.stringify(desc || {});
+
+            const typeSelect = document.createElement('select');
+            cloneSelectOptions(sourceSelect, typeSelect);
+            typeSelect.dataset.role = 'extra-type';
+            typeSelect.value = (desc && desc.type) || '';
+
+            const typeLabel = document.createElement('label');
+            typeLabel.textContent = 'Тип';
+            typeLabel.appendChild(typeSelect);
+
+            const paramsContainer = document.createElement('div');
+            paramsContainer.className = 'params extra-params';
+            renderExtraParams(kind, typeSelect.value, paramsContainer, desc);
+
+            typeSelect.addEventListener('change', () => {
+                renderExtraParams(kind, typeSelect.value, paramsContainer, desc);
+            });
+
+            const composeLabel = document.createElement('label');
+            composeLabel.textContent = 'Compose';
+            const composeSelect = document.createElement('select');
+            composeSelect.dataset.role = 'extra-compose';
+            const composeOptions = [{ value: '', label: '— по умолчанию —' }];
+            if (kind === 'transform') {
+                composeOptions.push(
+                    { value: 'add', label: 'Сложить (add)' },
+                    { value: 'blend', label: 'Смешать (blend)' },
+                );
+            } else if (kind === 'color' || kind === 'stroke') {
+                composeOptions.push(
+                    { value: 'add', label: 'Сложить (add)' },
+                    { value: 'mul', label: 'Умножить (mul)' },
+                    { value: 'blend', label: 'Смешать (blend)' },
+                );
+            } else if (kind === 'letter') {
+                composeOptions.push(
+                    { value: 'add', label: 'Сложить (add)' },
+                    { value: 'blend', label: 'Смешать (blend)' },
+                );
+            } else if (kind === 'pathMorph') {
+                composeOptions.push(
+                    { value: 'add', label: 'Сложить (add)' },
+                );
+            }
+            composeOptions.forEach((opt) => {
+                const o = document.createElement('option');
+                o.value = opt.value;
+                o.textContent = opt.label;
+                composeSelect.appendChild(o);
+            });
+            if (desc && typeof desc.compose === 'string') {
+                composeSelect.value = desc.compose;
+            }
+            composeLabel.appendChild(composeSelect);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.textContent = '− убрать';
+            removeBtn.className = 'small-button';
+            removeBtn.addEventListener('click', () => {
+                row.remove();
+            });
+
+            row.appendChild(typeLabel);
+            row.appendChild(paramsContainer);
+            row.appendChild(composeLabel);
+            row.appendChild(removeBtn);
+            rowsWrap.appendChild(row);
+        }
+
+        const extras = Array.isArray(descs) ? descs.slice(1) : [];
+        extras.forEach((d) => makeRow(d));
+
+        addBtn.addEventListener('click', () => {
+            makeRow({ type: sourceSelect.value || 'none', params: {} });
+        });
+
+        container.appendChild(header);
+        container.appendChild(rowsWrap);
+    }
+
+    function readExtraAnimations(containerId, kind) {
+        const container = $(containerId);
+        if (!container) return [];
+        const rowsWrap = container.querySelector('.extra-rows');
+        if (!rowsWrap) return [];
+        const rows = rowsWrap.querySelectorAll('.extra-row');
+        const result = [];
+
+        rows.forEach((row) => {
+            const typeSelect = row.querySelector('select[data-role="extra-type"]');
+            if (!typeSelect) return;
+            const type = typeSelect.value;
+            if (!type) return;
+
+            const paramsContainer = row.querySelector('.extra-params');
+            const composeSelect = row.querySelector('select[data-role="extra-compose"]');
+
+            let baseDesc = {};
+            if (row.dataset.descriptor) {
+                try {
+                    baseDesc = JSON.parse(row.dataset.descriptor);
+                } catch {
+                    baseDesc = {};
+                }
+            }
+
+            const desc = { ...baseDesc, type };
+            let params = undefined;
+
+            if (kind === 'transform') {
+                params = readParams(paramsContainer, transformSchema[type] || {});
+            } else if (kind === 'letter') {
+                params = readParams(paramsContainer, letterSchema[type] || {});
+            } else if (kind === 'pathMorph') {
+                params = readParams(paramsContainer, pathMorphSchema[type] || {});
+            } else if (kind === 'color') {
+                params = readColorParams(paramsContainer, type, {});
+            } else if (kind === 'stroke') {
+                params = readColorParams(paramsContainer, type, { isStroke: true });
+            }
+
+            if (params && Object.keys(params).length > 0) {
+                desc.params = params;
+            } else {
+                delete desc.params;
+            }
+
+            if (composeSelect && composeSelect.value) {
+                desc.compose = composeSelect.value;
+            } else if ('compose' in desc) {
+                delete desc.compose;
+            }
+            result.push(desc);
+        });
+
+        return result;
+    }
+
     function getCurrentConfig() {
         const frameRate = parseInt($('frameRate').value || '60', 10) || 60;
         const duration = Math.max(MIN_DURATION_FRAMES, parseInt($('duration').value || '0', 10) || MIN_DURATION_FRAMES);
@@ -1147,9 +1369,14 @@
             : null;
         const baseCfg = active && active.config ? active.config : {};
 
+        const existingTransforms = Array.isArray(baseCfg.transformAnimations)
+            ? baseCfg.transformAnimations.slice()
+            : [];
+        const prevTransform = existingTransforms[0];
         const transform = buildAnimationDescriptor(transformType, transformSchema, $('transformParams'));
 
         const existingColors = Array.isArray(baseCfg.colorAnimations) ? baseCfg.colorAnimations.slice() : [];
+        const prevColor = existingColors[0];
         const currentColorDesc = existingColors[0];
         const color = buildColorDescriptor(colorType, $('colorParams'), {
             fallbackBaseColor: getBaseColorFromDescriptor(currentColorDesc) || baseCfg.fillColor || [1, 1, 1],
@@ -1157,6 +1384,7 @@
         });
 
         const existingStrokes = Array.isArray(baseCfg.strokeAnimations) ? baseCfg.strokeAnimations.slice() : [];
+        const prevStroke = existingStrokes[0];
         const currentStrokeDesc = existingStrokes[0];
         const fallbackStrokeWidth = getStrokeWidthFromDescriptor(currentStrokeDesc) ?? baseCfg.strokeWidth ?? 2;
         const stroke = buildColorDescriptor(strokeType, $('strokeParams'), {
@@ -1165,6 +1393,16 @@
             fallbackStrokeWidth,
             isStatic: strokeType === 'none',
         });
+
+        const existingLetters = Array.isArray(baseCfg.letterAnimations)
+            ? baseCfg.letterAnimations.slice()
+            : [];
+        const prevLetter = existingLetters[0];
+
+        const existingPathMorphs = Array.isArray(baseCfg.pathMorphAnimations)
+            ? baseCfg.pathMorphAnimations.slice()
+            : [];
+        const prevPathMorph = existingPathMorphs[0];
 
         const letter = buildAnimationDescriptor(letterType, letterSchema, $('letterParams'));
         const pathMorph = buildAnimationDescriptor(pathMorphType, pathMorphSchema, $('pathMorphParams'));
@@ -1180,37 +1418,85 @@
         delete cfg.strokeColor;
         delete cfg.strokeWidth;
 
-        const existingTransforms = Array.isArray(baseCfg.transformAnimations)
-            ? baseCfg.transformAnimations.slice()
-            : [];
+        const extraTransforms = readExtraAnimations('transformExtras', 'transform');
         const restTransforms = existingTransforms.slice(1);
-        const transforms = transform ? [transform, ...restTransforms] : restTransforms;
+        let primaryTransform;
+        if (transformType !== 'none') {
+            primaryTransform = transform
+                ? prevTransform
+                    ? { ...prevTransform, ...transform }
+                    : transform
+                : prevTransform;
+        } else {
+            primaryTransform = undefined;
+        }
+        const transforms = primaryTransform
+            ? [primaryTransform, ...extraTransforms]
+            : extraTransforms;
         if (transforms.length) cfg.transformAnimations = transforms;
         else delete cfg.transformAnimations;
 
+        const extraColors = readExtraAnimations('colorExtras', 'color');
         const restColors = existingColors.slice(1);
-        const colors = color ? [color, ...restColors] : restColors;
+        let primaryColor;
+        if (colorType) {
+            primaryColor = color
+                ? prevColor
+                    ? { ...prevColor, ...color }
+                    : color
+                : prevColor;
+        } else {
+            primaryColor = undefined;
+        }
+        const colors = primaryColor ? [primaryColor, ...extraColors] : extraColors;
         if (colors.length) cfg.colorAnimations = colors;
         else delete cfg.colorAnimations;
 
+        const extraStrokes = readExtraAnimations('strokeExtras', 'stroke');
         const restStrokes = existingStrokes.slice(1);
-        const strokes = stroke ? [stroke, ...restStrokes] : restStrokes;
+        let primaryStroke;
+        if (strokeType) {
+            primaryStroke = stroke
+                ? prevStroke
+                    ? { ...prevStroke, ...stroke }
+                    : stroke
+                : prevStroke;
+        } else {
+            primaryStroke = undefined;
+        }
+        const strokes = primaryStroke ? [primaryStroke, ...extraStrokes] : extraStrokes;
         if (strokes.length) cfg.strokeAnimations = strokes;
         else delete cfg.strokeAnimations;
 
-        const existingLetters = Array.isArray(baseCfg.letterAnimations)
-            ? baseCfg.letterAnimations.slice()
-            : [];
+        const extraLetters = readExtraAnimations('letterExtras', 'letter');
         const restLetters = existingLetters.slice(1);
-        const letters = letter ? [letter, ...restLetters] : restLetters;
+        let primaryLetter;
+        if (letterType === 'none') {
+            primaryLetter = undefined;
+        } else {
+            primaryLetter = letter
+                ? prevLetter
+                    ? { ...prevLetter, ...letter }
+                    : letter
+                : prevLetter;
+        }
+        const letters = primaryLetter ? [primaryLetter, ...extraLetters] : extraLetters;
         if (letters.length) cfg.letterAnimations = letters;
         else delete cfg.letterAnimations;
 
-        const existingPathMorphs = Array.isArray(baseCfg.pathMorphAnimations)
-            ? baseCfg.pathMorphAnimations.slice()
-            : [];
+        const extraPathMorphs = readExtraAnimations('pathMorphExtras', 'pathMorph');
         const restPathMorphs = existingPathMorphs.slice(1);
-        const pathMorphs = pathMorph ? [pathMorph, ...restPathMorphs] : restPathMorphs;
+        let primaryPathMorph;
+        if (pathMorphType === 'none') {
+            primaryPathMorph = undefined;
+        } else {
+            primaryPathMorph = pathMorph
+                ? prevPathMorph
+                    ? { ...prevPathMorph, ...pathMorph }
+                    : pathMorph
+                : prevPathMorph;
+        }
+        const pathMorphs = primaryPathMorph ? [primaryPathMorph, ...extraPathMorphs] : extraPathMorphs;
         if (pathMorphs.length) cfg.pathMorphAnimations = pathMorphs;
         else delete cfg.pathMorphAnimations;
 
@@ -1286,6 +1572,11 @@
             pathMorphParamMeta[$('pathMorphType').value] || null,
             getPathMorphDefaults($('pathMorphType').value),
         );
+        renderExtraAnimations('transformExtras', 'transformType', cfg.transformAnimations || [], 'transform');
+        renderExtraAnimations('colorExtras', 'colorType', cfg.colorAnimations || [], 'color');
+        renderExtraAnimations('strokeExtras', 'strokeType', cfg.strokeAnimations || [], 'stroke');
+        renderExtraAnimations('letterExtras', 'letterType', cfg.letterAnimations || [], 'letter');
+        renderExtraAnimations('pathMorphExtras', 'pathMorphType', cfg.pathMorphAnimations || [], 'pathMorph');
         updateLetterWarning();
         updatePathWarning();
     }
@@ -1493,6 +1784,11 @@
                 pathMorphParamMeta[$('pathMorphType').value] || null,
                 getPathMorphDefaults($('pathMorphType').value),
             );
+            renderExtraAnimations('transformExtras', 'transformType', [], 'transform');
+            renderExtraAnimations('colorExtras', 'colorType', [], 'color');
+            renderExtraAnimations('strokeExtras', 'strokeType', [], 'stroke');
+            renderExtraAnimations('letterExtras', 'letterType', [], 'letter');
+            renderExtraAnimations('pathMorphExtras', 'pathMorphType', [], 'pathMorph');
             updateLetterWarning();
             updatePathWarning();
             renderVariants();
@@ -1628,6 +1924,11 @@
             pathMorphParamMeta[$('pathMorphType').value] || null,
             getPathMorphDefaults($('pathMorphType').value),
         );
+        renderExtraAnimations('transformExtras', 'transformType', [], 'transform');
+        renderExtraAnimations('colorExtras', 'colorType', [], 'color');
+        renderExtraAnimations('strokeExtras', 'strokeType', [], 'stroke');
+        renderExtraAnimations('letterExtras', 'letterType', [], 'letter');
+        renderExtraAnimations('pathMorphExtras', 'pathMorphType', [], 'pathMorph');
         updateLetterWarning();
         updatePathWarning();
         updateLetterWarning();
@@ -1651,11 +1952,26 @@
                 }
             }
             if (meta && meta.defaults) {
-                $('width').placeholder = String(meta.defaults.width);
-                $('height').placeholder = String(meta.defaults.height);
-                $('fontSize').placeholder = String(meta.defaults.fontSize);
-                $('frameRate').placeholder = String(meta.defaults.frameRate);
-                $('duration').placeholder = String(meta.defaults.duration);
+                const widthInput = $('width');
+                const heightInput = $('height');
+                const fontSizeInput = $('fontSize');
+                const frameRateInput = $('frameRate');
+                const durationInputEl = $('duration');
+                if (widthInput) {
+                    widthInput.placeholder = String(meta.defaults.width);
+                }
+                if (heightInput) {
+                    heightInput.placeholder = String(meta.defaults.height);
+                }
+                if (fontSizeInput) {
+                    fontSizeInput.placeholder = String(meta.defaults.fontSize);
+                }
+                if (frameRateInput) {
+                    frameRateInput.placeholder = String(meta.defaults.frameRate);
+                }
+                if (durationInputEl) {
+                    durationInputEl.placeholder = String(meta.defaults.duration);
+                }
                 frameRateSelect.value = meta.defaults.frameRate === 30 ? '30' : '60';
                 updateDurationRange();
                 setDurationValue(meta.defaults.duration ?? 0);

@@ -221,6 +221,49 @@ select:focus {
     padding: 4px 0;
 }
 
+.extra-animations {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #1e293b;
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.extra-animations-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.extra-animations-title {
+    color: #9ca3af;
+}
+
+.extra-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.extra-row {
+    gap: 8px;
+}
+
+.extra-row select {
+    min-width: 80px;
+}
+
+.extra-row input[type="text"] {
+    flex: 1 1 auto;
+}
+
+.extra-row .small-button {
+    justify-self: end;
+}
+
 .color-rows {
     display: flex;
     flex-direction: column;

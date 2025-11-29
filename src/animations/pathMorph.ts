@@ -1,7 +1,6 @@
 import { PathMorphAnimationType } from '../domain/types';
 import { buildPathMorphKeyframes } from '../shapes/bezier';
 import { Bezier } from '../interfaces/lottie';
-import { ComposeFn } from '../domain/types';
 
 export type PathMorphContext = {
     fontSize: number;
@@ -11,11 +10,12 @@ export type PathMorphContext = {
 
 export type PathMorphDescriptor = {
     type: PathMorphAnimationType;
-    compose?: ComposeFn<Bezier[], PathMorphContext>;
+    compose?: any;
     priority?: number;
     params?: any;
 };
 
+// Последовательное применение морфингов: каждый следующий фильтр применяется к результату предыдущего.
 export function applyPathMorphAnimations(
     bez: Bezier,
     descs: PathMorphDescriptor[] | undefined,
@@ -23,18 +23,32 @@ export function applyPathMorphAnimations(
 ): any[] | null {
     const list = descs && descs.length ? descs : [{ type: PathMorphAnimationType.None }];
     const sorted = [...list].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-    return sorted.reduce<Bezier[] | null>((acc, desc, idx) => {
-        if (desc.type === PathMorphAnimationType.None) return acc;
-        const keyframes = buildPathMorphKeyframes(
-            idx === 0 ? bez : (acc?.[acc.length - 1] as Bezier),
+
+    let currentBezier = bez;
+    let lastTrack: any[] | null = null;
+
+    for (const desc of sorted) {
+        if (desc.type === PathMorphAnimationType.None) continue;
+        const track = buildPathMorphKeyframes(
+            currentBezier,
             ctx.fontSize,
             ctx.duration,
             desc.type,
             ctx.seed,
             desc.params,
         );
-        if (!keyframes) return acc;
-        const composed = desc.compose ? desc.compose(acc ?? [], keyframes as any, ctx) : keyframes as any;
-        return composed as any;
-    }, null);
+        if (!track || !track.length) continue;
+
+        lastTrack = track as any[];
+
+        // Обновляем текущую форму по последнему ключевому кадру
+        const lastKf = track[track.length - 1] as any;
+        const lastState =
+            (Array.isArray(lastKf.e) && lastKf.e[0]) ||
+            (Array.isArray(lastKf.s) && lastKf.s[0]) ||
+            currentBezier;
+        currentBezier = lastState as Bezier;
+    }
+
+    return lastTrack;
 }
