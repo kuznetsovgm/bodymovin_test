@@ -1,5 +1,21 @@
 (() => {
-    const uiBaseUrl = new URL('.', window.location.href);
+    const uiBaseUrl = (() => {
+        const scriptEl = document.currentScript || document.querySelector('script[src*="config.js"]');
+        if (scriptEl && scriptEl instanceof HTMLScriptElement && scriptEl.src) {
+            const scriptUrl = new URL(scriptEl.src, window.location.origin);
+            scriptUrl.pathname = scriptUrl.pathname.replace(/\/[^/]*$/, '/');
+            scriptUrl.search = '';
+            scriptUrl.hash = '';
+            return scriptUrl;
+        }
+        const locationUrl = new URL(window.location.href);
+        if (!locationUrl.pathname.endsWith('/')) {
+            locationUrl.pathname = locationUrl.pathname.replace(/\/[^/]*$/, '/');
+        }
+        locationUrl.search = '';
+        locationUrl.hash = '';
+        return locationUrl;
+    })();
     const state = {
         meta: null,
         variants: [],
