@@ -340,7 +340,7 @@
     }
 
     async function api(path, options) {
-        const normalizedPath = uiBaseUrl.pathname + "/" + path.replace(/^\.\//, '').replace(/^\/+/, '');
+        const normalizedPath = uiBaseUrl.pathname + path.replace(/^\.\//, '').replace(/^\/+/, '');
         const url = new URL(normalizedPath, uiBaseUrl.host);
         const res = await fetch(url.toString(), {
             headers: { 'Content-Type': 'application/json' },
