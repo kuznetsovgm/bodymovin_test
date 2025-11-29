@@ -339,7 +339,8 @@
     }
 
     async function api(path, options) {
-        const res = await fetch(path, {
+        const url = new URL(path, window.location.href);
+        const res = await fetch(url.toString(), {
             headers: { 'Content-Type': 'application/json' },
             ...options,
         });
@@ -1290,7 +1291,7 @@
     async function refreshVariants() {
         try {
             setStatus('Загрузка конфигураций…');
-            const data = await api('/api/configs');
+            const data = await api('./api/configs');
             state.variants = data.configs || [];
             renderVariants();
             setStatus('Готово');
@@ -1343,13 +1344,13 @@
             setStatus('Сохранение…');
 
             if (isNew) {
-                const res = await api('/api/configs', {
+                const res = await api('./api/configs', {
                     method: 'POST',
                     body: JSON.stringify({ config: cfg, enabled }),
                 });
                 state.activeId = res.id;
             } else {
-                const res = await api(`/api/configs/${encodeURIComponent(state.activeId)}`, {
+                const res = await api(`./api/configs/${encodeURIComponent(state.activeId)}`, {
                     method: 'PUT',
                     body: JSON.stringify({ config: cfg, enabled }),
                 });
@@ -1373,7 +1374,7 @@
             }
             const cfg = getCurrentConfig();
             setStatus('Генерация предпросмотра…');
-            const res = await api('/api/preview', {
+            const res = await api('./api/preview', {
                 method: 'POST',
                 body: JSON.stringify({ text, config: cfg }),
             });
@@ -1632,7 +1633,7 @@
         updateDurationRange();
         setDurationValue(parseInt(durationInput.value || '0', 10) || 0);
         try {
-            const meta = await api('/api/meta');
+            const meta = await api('./api/meta');
             state.meta = meta;
             if (meta && Array.isArray(meta.fonts)) {
                 const fontSelect = $('fontFile');

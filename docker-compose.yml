@@ -165,25 +165,13 @@ services:
       - NODE_ENV=production
       - WEB_PORT=8080
       - REDIS_URL=redis://redis:6379
+      - CONFIG_UI_SECRET_PATH=${CONFIG_UI_SECRET_PATH:-/}
     command: node -r dotenv/config ./dist/web-server.js
     volumes:
+      - ./public:/app/public
       - ./fonts:/app/fonts
-    networks:
-      - bodymovin-net
-
-  config-ui-proxy:
-    image: nginx:alpine
-    container_name: bodymovin-config-ui-proxy
-    restart: unless-stopped
-    depends_on:
-      - config-ui
-    environment:
-      - CONFIG_UI_ALLOWED_IP=${CONFIG_UI_ALLOWED_IP:?Set CONFIG_UI_ALLOWED_IP in .env}
-    volumes:
-      - ./nginx/config-ui.conf.template:/etc/nginx/templates/config-ui.conf.template:ro
-    command: /bin/sh -c "envsubst '$$CONFIG_UI_ALLOWED_IP' < /etc/nginx/templates/config-ui.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
     ports:
-      - "8088:80"
+      - "127.0.0.1:8088:8080"
     networks:
       - bodymovin-net
 

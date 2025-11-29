@@ -23,6 +23,39 @@ import {
 import { DEFAULT_FRAME_RATE, DEFAULT_DURATION, DEFAULT_FONT_FILE } from './domain/defaults';
 
 const PORT = parseInt(process.env.WEB_PORT || '8080', 10);
+const SECRET_PATH = normalizeSecretPath(process.env.CONFIG_UI_SECRET_PATH);
+
+function normalizeSecretPath(raw?: string) {
+    let value = (raw || '/').trim();
+    if (!value) {
+        return '/';
+    }
+    if (!value.startsWith('/')) {
+        value = `/${value}`;
+    }
+    value = value.replace(/\/+/g, '/');
+    while (value.length > 1 && value.endsWith('/')) {
+        value = value.slice(0, -1);
+    }
+    return value || '/';
+}
+
+function getRelativePath(pathname: string): string | null {
+    if (!pathname) {
+        pathname = '/';
+    }
+    if (SECRET_PATH === '/') {
+        return pathname;
+    }
+    if (pathname === SECRET_PATH) {
+        return '/';
+    }
+    if (pathname.startsWith(`${SECRET_PATH}/`)) {
+        const trimmed = pathname.slice(SECRET_PATH.length);
+        return trimmed || '/';
+    }
+    return null;
+}
 
 const stickerConfigManager = new StickerConfigManager(stickerCache.getRedis());
 
@@ -65,9 +98,9 @@ function parseBody(req: JsonRequest): Promise<any> {
     });
 }
 
-function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
+function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathname: string) {
     // Serve local copy of lottie-web to avoid CDN dependency
-    if (url.pathname === '/lottie.js') {
+    if (pathname === '/lottie.js') {
         const lottiePath = path.join(
             process.cwd(),
             'node_modules',
@@ -96,7 +129,7 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: U
         return;
     }
 
-    if (url.pathname === '/lottie-player.js') {
+    if (pathname === '/lottie-player.js') {
         const playerPath = path.join(
             process.cwd(),
             'node_modules',
@@ -124,11 +157,11 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: U
 
 
     // Map root to config UI
-    let pathname = url.pathname === '/' ? '/config.html' : url.pathname;
+    let safePathname = pathname === '/' ? '/config.html' : pathname;
     // Prevent directory traversal
-    pathname = pathname.replace(/(\.\.(\/|\\|$))+/g, '');
+    safePathname = safePathname.replace(/(\.\.(\/|\\|$))+/g, '');
 
-    const filePath = path.join(process.cwd(), 'public', pathname);
+    const filePath = path.join(process.cwd(), 'public', safePathname);
     if (!filePath.startsWith(path.join(process.cwd(), 'public'))) {
         notFound(res);
         return;
@@ -320,26 +353,32 @@ const server = http.createServer(async (req: JsonRequest, res) => {
     try {
         const method = req.method || 'GET';
         const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+        const relativePath = getRelativePath(url.pathname);
 
-        if (url.pathname.startsWith('/api/')) {
-            if (url.pathname === '/api/configs' && method === 'GET') {
+        if (relativePath === null) {
+            notFound(res);
+            return;
+        }
+
+        if (relativePath.startsWith('/api/')) {
+            if (relativePath === '/api/configs' && method === 'GET') {
                 await handleGetConfigs(res);
                 return;
             }
-            if (url.pathname === '/api/configs' && method === 'POST') {
+            if (relativePath === '/api/configs' && method === 'POST') {
                 await handleCreateConfig(req, res);
                 return;
             }
-            if (url.pathname === '/api/meta' && method === 'GET') {
+            if (relativePath === '/api/meta' && method === 'GET') {
                 await handleMeta(res);
                 return;
             }
-            if (url.pathname === '/api/preview' && method === 'POST') {
+            if (relativePath === '/api/preview' && method === 'POST') {
                 await handlePreview(req, res);
                 return;
             }
 
-            const configIdMatch = url.pathname.match(/^\/api\/configs\/([^/]+)(?:\/(enable|disable))?$/);
+            const configIdMatch = relativePath.match(/^\/api\/configs\/([^/]+)(?:\/(enable|disable))?$/);
             if (configIdMatch) {
                 const configId = configIdMatch[1];
                 const action = configIdMatch[2];
@@ -369,7 +408,7 @@ const server = http.createServer(async (req: JsonRequest, res) => {
             return;
         }
 
-        serveStatic(req, res, url);
+        serveStatic(req, res, relativePath);
     } catch (err) {
         console.error('Unhandled server error:', err);
         if (!res.headersSent) {
@@ -381,5 +420,6 @@ const server = http.createServer(async (req: JsonRequest, res) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`Sticker config web UI listening on http://localhost:${PORT}`);
+    const suffix = SECRET_PATH === '/' ? '' : SECRET_PATH;
+    console.log(`Sticker config web UI listening on http://localhost:${PORT}${suffix}`);
 });
