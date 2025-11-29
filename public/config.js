@@ -1,21 +1,5 @@
 (() => {
-    const uiBaseUrl = (() => {
-        const scriptEl = document.currentScript || document.querySelector('script[src*="config.js"]');
-        if (scriptEl && scriptEl instanceof HTMLScriptElement && scriptEl.src) {
-            const scriptUrl = new URL(scriptEl.src, window.location.origin);
-            scriptUrl.pathname = scriptUrl.pathname.replace(/\/[^/]*$/, '/');
-            scriptUrl.search = '';
-            scriptUrl.hash = '';
-            return scriptUrl;
-        }
-        const locationUrl = new URL(window.location.href);
-        if (!locationUrl.pathname.endsWith('/')) {
-            locationUrl.pathname = locationUrl.pathname.replace(/\/[^/]*$/, '/');
-        }
-        locationUrl.search = '';
-        locationUrl.hash = '';
-        return locationUrl;
-    })();
+    const uiBaseUrl = new URL(window.location.href);
     const state = {
         meta: null,
         variants: [],
@@ -356,8 +340,8 @@
     }
 
     async function api(path, options) {
-        const normalizedPath = path.replace(/^\.\//, '').replace(/^\/+/, '');
-        const url = new URL(normalizedPath, uiBaseUrl);
+        const normalizedPath = uiBaseUrl.pathname + "/" + path.replace(/^\.\//, '').replace(/^\/+/, '');
+        const url = new URL(normalizedPath, uiBaseUrl.host);
         const res = await fetch(url.toString(), {
             headers: { 'Content-Type': 'application/json' },
             ...options,
@@ -885,9 +869,9 @@
                 : options.fallbackLoop ?? !isStatic;
         const strokeWidthValue =
             options.isStroke &&
-            values &&
-            typeof values.strokeWidth === 'number' &&
-            Number.isFinite(values.strokeWidth)
+                values &&
+                typeof values.strokeWidth === 'number' &&
+                Number.isFinite(values.strokeWidth)
                 ? values.strokeWidth
                 : options.isStroke
                     ? options.fallbackStrokeWidth
