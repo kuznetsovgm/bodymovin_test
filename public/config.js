@@ -1,4 +1,5 @@
 (() => {
+    const uiBaseUrl = new URL('.', window.location.href);
     const state = {
         meta: null,
         variants: [],
@@ -339,7 +340,8 @@
     }
 
     async function api(path, options) {
-        const url = new URL(path, window.location.href);
+        const normalizedPath = path.replace(/^\.\//, '').replace(/^\/+/, '');
+        const url = new URL(normalizedPath, uiBaseUrl);
         const res = await fetch(url.toString(), {
             headers: { 'Content-Type': 'application/json' },
             ...options,
