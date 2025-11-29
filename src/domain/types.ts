@@ -43,6 +43,43 @@ export enum PathMorphAnimationType {
     SkewSwing = 'skewSwing',
 }
 
+export enum BackgroundLayerType {
+    Solid = 'solid',
+    Frame = 'frame',
+    Stripes = 'stripes',
+    GlyphPattern = 'glyphPattern',
+    TextLike = 'textLike',
+}
+
+export type BackgroundLayerDescriptor = {
+    type: BackgroundLayerType;
+    transformAnimations?: TransformAnimationDescriptor[];
+    colorAnimations?: ColorAnimationDescriptor[];
+    strokeAnimations?: ColorAnimationDescriptor[];
+    pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
+    /** Для паттернов на базе шрифта */
+    fontFile?: string;
+    /** Текст паттерна */
+    text?: string;
+    /** Специализированные настройки конкретного вида фона */
+    params?: any;
+};
+
+export type KnockoutBackgroundMode = 'fill' | 'stroke';
+
+export type KnockoutBackgroundOptions = {
+    transformAnimations?: TransformAnimationDescriptor[];
+    colorAnimations?: ColorAnimationDescriptor[];
+    strokeAnimations?: ColorAnimationDescriptor[];
+    pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
+    /** 'fill' — вырез по заливке букв; 'stroke' — по контуру (пока ведёт себя как fill) */
+    mode?: KnockoutBackgroundMode;
+    /** Запас вокруг текста относительно его габаритов */
+    paddingFactor?: number;
+    /** Скругление углов фоновой плашки (0..1 от min(width,height)) */
+    cornerRadiusFactor?: number;
+};
+
 export type ComposeFn<TPatch, TCtx = any> = (base: TPatch, next: TPatch, ctx: TCtx) => TPatch;
 
 export type AnimationWindow = { start: number; end: number };
@@ -107,6 +144,8 @@ export interface GenerateStickerOptions {
     colorAnimations?: ColorAnimationDescriptor[];
     strokeAnimations?: ColorAnimationDescriptor[];
     pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
+    backgroundLayers?: BackgroundLayerDescriptor[];
+    knockoutBackground?: KnockoutBackgroundOptions;
     /** Имя файла шрифта (в директории fonts) */
     fontFile?: string;
     width?: number;

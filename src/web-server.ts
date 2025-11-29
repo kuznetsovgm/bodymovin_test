@@ -21,6 +21,8 @@ import {
     fontAnimationConfig,
 } from './config/animation-config';
 import { DEFAULT_FRAME_RATE, DEFAULT_DURATION, DEFAULT_FONT_FILE } from './domain/defaults';
+import { loadFont } from './layout/fontLoader';
+import { fontHasCyrillic, fontSupportsText } from './layout/fontSupport';
 
 const PORT = parseInt(process.env.WEB_PORT || '8080', 10);
 const SECRET_PATH = normalizeSecretPath(process.env.CONFIG_UI_SECRET_PATH);
@@ -316,6 +318,34 @@ async function handlePreview(req: JsonRequest, res: http.ServerResponse) {
     }
 }
 
+async function handleFontSupport(req: JsonRequest, res: http.ServerResponse) {
+    try {
+        const body = await parseBody(req);
+        const text = (body.text ?? '').toString();
+        const fontFile = (body.fontFile ?? DEFAULT_FONT_FILE).toString();
+
+        if (!text || !text.trim()) {
+            sendJson(res, 400, { error: 'Text is required' });
+            return;
+        }
+
+        const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
+        const font = await loadFont(fontPath);
+
+        const hasCyr = fontHasCyrillic(font);
+        const supports = fontSupportsText(font, text);
+
+        sendJson(res, 200, {
+            ok: supports,
+            hasCyrillic: hasCyr,
+            fontFile,
+        });
+    } catch (err) {
+        console.error('Error checking font support:', err);
+        sendJson(res, 500, { error: 'Failed to check font support' });
+    }
+}
+
 async function handleMeta(res: http.ServerResponse) {
     let fonts: string[] = [];
     try {
@@ -384,6 +414,10 @@ const server = http.createServer(async (req: JsonRequest, res) => {
             }
             if (relativePath === '/api/preview' && method === 'POST') {
                 await handlePreview(req, res);
+                return;
+            }
+            if (relativePath === '/api/font-support' && method === 'POST') {
+                await handleFontSupport(req, res);
                 return;
             }
 
