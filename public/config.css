@@ -424,6 +424,10 @@ select:focus {
 }
 .glyph-preview-container {
     grid-column: span 3;
+    margin-top: 8px;
+}
+.glyph-preview-container {
+    grid-column: span 3;
     width: 100%;
 }
 .glyph-preview-table {

@@ -9,6 +9,8 @@ import {
     ColorAnimationType,
     LetterAnimationType,
     PathMorphAnimationType,
+    BackgroundLayerType,
+    KnockoutBackgroundMode,
 } from './index';
 import { StickerConfigManager } from './config-manager';
 import { stickerCache } from './cache';
@@ -23,6 +25,7 @@ import {
 import { DEFAULT_FRAME_RATE, DEFAULT_DURATION, DEFAULT_FONT_FILE } from './domain/defaults';
 import { loadFont } from './layout/fontLoader';
 import { fontHasCyrillic, fontSupportsText } from './layout/fontSupport';
+import opentype from 'opentype.js';
 
 const PORT = parseInt(process.env.WEB_PORT || '8080', 10);
 const SECRET_PATH = normalizeSecretPath(process.env.CONFIG_UI_SECRET_PATH);
@@ -101,6 +104,31 @@ function parseBody(req: JsonRequest): Promise<any> {
 }
 
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathname: string) {
+    // Serve fonts (ttf/otf) from configured font directory, including glyphs subdir
+    if (pathname.startsWith('/fonts/')) {
+        const rel = pathname.replace(/^\/+/, '').replace(/^\.+/, '');
+        const filePath = path.resolve(fontAnimationConfig.fontDirectory, rel.replace(/^fonts\//, ''));
+        if (!/\.(ttf|otf)$/i.test(filePath)) {
+            notFound(res);
+            return;
+        }
+        fs.stat(filePath, (err, stats) => {
+            if (err || !stats.isFile()) {
+                notFound(res);
+                return;
+            }
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'font/ttf');
+            const stream = fs.createReadStream(filePath);
+            stream.on('error', () => {
+                if (!res.headersSent) res.statusCode = 500;
+                res.end();
+            });
+            stream.pipe(res);
+        });
+        return;
+    }
+
     // Serve local copy of lottie-web to avoid CDN dependency
     if (pathname === '/lottie.js') {
         const lottiePath = path.join(
@@ -346,12 +374,98 @@ async function handleFontSupport(req: JsonRequest, res: http.ServerResponse) {
     }
 }
 
+async function handleGlyphs(req: JsonRequest, res: http.ServerResponse, url: URL) {
+    try {
+        const fontName = url.searchParams.get('font');
+        if (!fontName) {
+            sendJson(res, 400, { error: 'font query param is required' });
+            return;
+        }
+        const glyphPath = path.resolve(fontAnimationConfig.fontDirectory, 'glyphs', fontName);
+        const plainPath = path.resolve(fontAnimationConfig.fontDirectory, fontName);
+        let font: opentype.Font | null = null;
+        try {
+            font = await loadFont(glyphPath);
+        } catch {
+            // fallback
+        }
+        if (!font) {
+            try {
+                font = await loadFont(plainPath);
+            } catch {
+                font = null;
+            }
+        }
+        if (!font) {
+            sendJson(res, 404, { error: 'Font not found' });
+            return;
+        }
+
+        const items: { char: string; codePoint: number; name?: string; commands?: number; points?: number }[] = [];
+        const seen = new Set<number>();
+        const total = font.numGlyphs || ((font as any).glyphs && (font as any).glyphs.length) || 0;
+        for (let i = 0; i < total; i++) {
+            const g: any = font.glyphs.get ? font.glyphs.get(i) : (font as any).glyphs[i];
+            if (!g) continue;
+            const cps: number[] = Array.isArray(g.unicodes) && g.unicodes.length
+                ? g.unicodes
+                : g.unicode != null
+                    ? [g.unicode]
+                    : [];
+            cps.forEach((cp) => {
+                if (!cp || typeof cp !== 'number' || seen.has(cp)) return;
+                seen.add(cp);
+                const ch = String.fromCodePoint(cp);
+                let cmdCount = 0;
+                let pointCount = 0;
+                try {
+                    const p = g.getPath(0, 0, 72);
+                    if (p && Array.isArray(p.commands)) {
+                        cmdCount = p.commands.length;
+                        pointCount = p.commands.reduce((acc: number, cmd: any) => {
+                            const coords = ['x', 'y', 'x1', 'y1', 'x2', 'y2'].reduce(
+                                (cnt, k) => cnt + (typeof cmd[k] === 'number' ? 1 : 0),
+                                0,
+                            );
+                            return acc + coords / 2;
+                        }, 0);
+                    }
+                } catch {
+                    // ignore
+                }
+                items.push({ char: ch, codePoint: cp, name: g.name, commands: cmdCount, points: pointCount });
+            });
+        }
+
+        items.sort((a, b) => {
+            const wa = (a.points ?? 0) + (a.commands ?? 0);
+            const wb = (b.points ?? 0) + (b.commands ?? 0);
+            return wa - wb; // лёгкие/нулевые вверх, тяжёлые вниз
+        });
+
+        sendJson(res, 200, {
+            font: fontName,
+            count: items.length,
+            glyphs: items,
+        });
+    } catch (err) {
+        console.error('Error reading glyphs:', err);
+        sendJson(res, 500, { error: 'Failed to read glyphs' });
+    }
+}
+
 async function handleMeta(res: http.ServerResponse) {
     let fonts: string[] = [];
+    let glyphFonts: string[] = [];
     try {
         const fontsDir = path.resolve(fontAnimationConfig.fontDirectory);
         const entries = await fs.promises.readdir(fontsDir, { withFileTypes: true });
         fonts = entries
+            .filter((e) => e.isFile() && /\.(ttf|otf)$/i.test(e.name))
+            .map((e) => e.name);
+        const glyphDir = path.resolve(fontAnimationConfig.fontDirectory, 'glyphs');
+        const glyphEntries = await fs.promises.readdir(glyphDir, { withFileTypes: true });
+        glyphFonts = glyphEntries
             .filter((e) => e.isFile() && /\.(ttf|otf)$/i.test(e.name))
             .map((e) => e.name);
     } catch (err) {
@@ -364,6 +478,11 @@ async function handleMeta(res: http.ServerResponse) {
             ColorAnimationType,
             LetterAnimationType,
             PathMorphAnimationType,
+            BackgroundLayerType,
+            KnockoutBackgroundMode: {
+                Fill: 'fill',
+                Stroke: 'stroke',
+            },
         },
         defaults: {
             frameRate: DEFAULT_FRAME_RATE,
@@ -374,8 +493,241 @@ async function handleMeta(res: http.ServerResponse) {
             letterAnimationConfig,
             pathMorphAnimationConfig,
             fontAnimationConfig,
+            backgroundLayerTypes: [
+                { value: BackgroundLayerType.Solid, label: 'Solid (плашка)' },
+                { value: BackgroundLayerType.Frame, label: 'Frame (рамка)' },
+                { value: BackgroundLayerType.Stripes, label: 'Stripes (полосы)' },
+                { value: BackgroundLayerType.GlyphPattern, label: 'GlyphPattern' },
+                { value: BackgroundLayerType.TextLike, label: 'TextLike' },
+            ],
+            knockoutModes: [
+                { value: 'fill' as KnockoutBackgroundMode, label: 'Fill (по заливке букв)' },
+                { value: 'stroke' as KnockoutBackgroundMode, label: 'Stroke (по контуру)' },
+            ],
+            backgroundParamMeta: {
+                [BackgroundLayerType.Solid]: {
+                    paddingFactor: { min: 0, max: 0.5, step: 0.01, hint: 'Доля от размера кадра' },
+                    cornerRadius: { min: 0, max: 80, step: 1 },
+                    scale: { min: 0, max: 5, step: 0.01 },
+                    rotationDeg: { min: -360, max: 360, step: 1 },
+                    opacity: { min: 0, max: 1, step: 0.01 },
+                    offsetX: { min: -1000, max: 1000, step: 1 },
+                    offsetY: { min: -1000, max: 1000, step: 1 },
+                },
+                [BackgroundLayerType.Frame]: {
+                    paddingFactor: { min: 0, max: 0.5, step: 0.01 },
+                    cornerRadius: { min: 0, max: 80, step: 1 },
+                    scale: { min: 0, max: 5, step: 0.01 },
+                    rotationDeg: { min: -360, max: 360, step: 1 },
+                    opacity: { min: 0, max: 1, step: 0.01 },
+                    offsetX: { min: -1000, max: 1000, step: 1 },
+                    offsetY: { min: -1000, max: 1000, step: 1 },
+                },
+                [BackgroundLayerType.Stripes]: {
+                    count: { min: 1, max: 20, step: 1 },
+                    stripeHeightFactor: { min: 0.01, max: 1, step: 0.01 },
+                    gapFactor: { min: 0, max: 1, step: 0.01 },
+                    cornerRadius: { min: 0, max: 40, step: 1 },
+                    colorPhaseStep: { min: 0, max: 1, step: 0.01 },
+                    scale: { min: 0, max: 5, step: 0.01 },
+                    rotationDeg: { min: -360, max: 360, step: 1 },
+                    opacity: { min: 0, max: 1, step: 0.01 },
+                    offsetX: { min: -1000, max: 1000, step: 1 },
+                    offsetY: { min: -1000, max: 1000, step: 1 },
+                },
+                [BackgroundLayerType.GlyphPattern]: {
+                    paddingFactor: { min: 0, max: 0.5, step: 0.01 },
+                    cornerRadius: { min: 0, max: 80, step: 1 },
+                    gridColumns: { min: 1, max: 10, step: 1 },
+                    gridRows: { min: 1, max: 10, step: 1 },
+                    spacingXFactor: { min: 0, max: 2, step: 0.05 },
+                    spacingYFactor: { min: 0, max: 2, step: 0.05 },
+                    colorPhaseStep: { min: 0, max: 1, step: 0.01 },
+                    scale: { min: 0, max: 5, step: 0.01 },
+                    rotationDeg: { min: -360, max: 360, step: 1 },
+                    opacity: { min: 0, max: 1, step: 0.01 },
+                    offsetX: { min: -1000, max: 1000, step: 1 },
+                    offsetY: { min: -1000, max: 1000, step: 1 },
+                },
+                [BackgroundLayerType.TextLike]: {
+                    paddingFactor: { min: 0, max: 0.5, step: 0.01 },
+                    cornerRadius: { min: 0, max: 80, step: 1 },
+                    colorPhaseStep: { min: 0, max: 1, step: 0.01 },
+                    scale: { min: 0, max: 5, step: 0.01 },
+                    rotationDeg: { min: -360, max: 360, step: 1 },
+                    opacity: { min: 0, max: 1, step: 0.01 },
+                    offsetX: { min: -1000, max: 1000, step: 1 },
+                    offsetY: { min: -1000, max: 1000, step: 1 },
+                },
+            },
+            backgroundDefaults: {
+                solid: {
+                    type: BackgroundLayerType.Solid,
+                    params: { paddingFactor: 0, cornerRadius: 0 },
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[0.1, 0.1, 0.1, 1]],
+                                times: [0],
+                                loop: false,
+                            },
+                        },
+                    ],
+                },
+                frame: {
+                    type: BackgroundLayerType.Frame,
+                    params: { paddingFactor: 0.05, cornerRadius: 8 },
+                    strokeAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[1, 1, 1, 1]],
+                                times: [0],
+                                loop: false,
+                                strokeWidth: 4,
+                            },
+                        },
+                    ],
+                },
+                stripes: {
+                    type: BackgroundLayerType.Stripes,
+                    params: { count: 5, stripeHeightFactor: 0.1, gapFactor: 0.05, cornerRadius: 4 },
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[0.2, 0.2, 0.2, 1]],
+                                times: [0],
+                                loop: false,
+                            },
+                        },
+                    ],
+                },
+                glyphPattern: {
+                    type: BackgroundLayerType.GlyphPattern,
+                    text: '*',
+                    params: {
+                        paddingFactor: 0.1,
+                        gridColumns: 2,
+                        gridRows: 2,
+                        spacingXFactor: 0.3,
+                        spacingYFactor: 0.3,
+                        colorPhaseStep: 0.1,
+                    },
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[0.8, 0.8, 0.8, 1]],
+                                times: [0],
+                                loop: false,
+                            },
+                        },
+                    ],
+                    pathMorphAnimations: [{ type: PathMorphAnimationType.None }],
+                    transformAnimations: [{ type: TransformAnimationType.None }],
+                },
+                glyphPatternWave: {
+                    type: BackgroundLayerType.GlyphPattern,
+                    text: '✦✶✷✸',
+                    params: {
+                        paddingFactor: 0.05,
+                        gridColumns: 3,
+                        gridRows: 3,
+                        spacingXFactor: 0.25,
+                        spacingYFactor: 0.25,
+                        colorPhaseStep: 0.08,
+                    },
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.Rainbow,
+                            params: { loop: true },
+                        },
+                    ],
+                    pathMorphAnimations: [
+                        { type: PathMorphAnimationType.Warp, params: { intensityFactor: 0.05 } },
+                    ],
+                    transformAnimations: [{ type: TransformAnimationType.ScalePulse }],
+                },
+                glyphPatternSoft: {
+                    type: BackgroundLayerType.GlyphPattern,
+                    text: '●◆■',
+                    params: {
+                        paddingFactor: 0.08,
+                        gridColumns: 4,
+                        gridRows: 4,
+                        spacingXFactor: 0.2,
+                        spacingYFactor: 0.2,
+                        colorPhaseStep: 0.05,
+                    },
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.CycleRGB,
+                            params: {
+                                colors: [
+                                    [0.9, 0.7, 0.7, 1],
+                                    [0.7, 0.9, 0.7, 1],
+                                    [0.7, 0.7, 0.9, 1],
+                                ],
+                                times: [0, 0.5, 1],
+                                loop: true,
+                            },
+                        },
+                    ],
+                    pathMorphAnimations: [
+                        { type: PathMorphAnimationType.SkewPulse, params: { intensityFactor: 0.05 } },
+                    ],
+                    transformAnimations: [{ type: TransformAnimationType.SlideLoop, params: { amplitudeXFactor: 0.05 } }],
+                },
+                textLike: {
+                    type: BackgroundLayerType.TextLike,
+                    text: '',
+                    params: {
+                        paddingFactor: 0,
+                        colorPhaseStep: 0.1,
+                    },
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[0.4, 0.4, 0.4, 0.3]],
+                                times: [0],
+                                loop: false,
+                            },
+                        },
+                    ],
+                },
+                knockout: {
+                    mode: 'fill' as KnockoutBackgroundMode,
+                    paddingFactor: 0,
+                    cornerRadiusFactor: 0,
+                    colorAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[0, 0, 0, 0.8]],
+                                times: [0],
+                                loop: false,
+                            },
+                        },
+                    ],
+                    strokeAnimations: [
+                        {
+                            type: ColorAnimationType.None,
+                            params: {
+                                colors: [[1, 1, 1, 1]],
+                                times: [0],
+                                loop: false,
+                                strokeWidth: 2,
+                            },
+                        },
+                    ],
+                },
+            },
         },
         fonts,
+        glyphFonts,
     });
 }
 
@@ -414,6 +766,10 @@ const server = http.createServer(async (req: JsonRequest, res) => {
             }
             if (relativePath === '/api/preview' && method === 'POST') {
                 await handlePreview(req, res);
+                return;
+            }
+            if (relativePath === '/api/glyphs' && method === 'GET') {
+                await handleGlyphs(req, res, url);
                 return;
             }
             if (relativePath === '/api/font-support' && method === 'POST') {

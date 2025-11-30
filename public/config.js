@@ -860,6 +860,7 @@
         document.head.appendChild(style);
     }
 
+
     function ensureFontPreviewFace(fontFile) {
         if (!fontFile) return;
         const existing = document.getElementById('fontPreviewStyle');
@@ -1478,9 +1479,6 @@
         fontInput.disabled = layer.type !== 'glyphPattern' && layer.type !== 'textLike';
         fontLabel.appendChild(fontInput);
 
-        const glyphPreview = document.createElement('div');
-        glyphPreview.className = 'glyph-preview';
-
         const textLabel = document.createElement('label');
         textLabel.textContent = 'text (паттерн)';
         const textInput = document.createElement('input');
@@ -1489,9 +1487,15 @@
         textInput.disabled = layer.type !== 'glyphPattern' && layer.type !== 'textLike';
         textLabel.appendChild(textInput);
         fontRow.appendChild(fontLabel);
-        fontRow.appendChild(glyphPreview);
         fontRow.appendChild(textLabel);
         container.appendChild(fontRow);
+
+        const glyphPreviewWrapper = document.createElement('div');
+        glyphPreviewWrapper.className = 'glyph-preview-container';
+        const glyphPreview = document.createElement('div');
+        glyphPreview.className = 'glyph-preview';
+        glyphPreviewWrapper.appendChild(glyphPreview);
+        container.appendChild(glyphPreviewWrapper);
 
         const params = normalizeBackgroundParams(layer.type, layer.params || {});
         const meta = state.meta && state.meta.defaults && state.meta.defaults.backgroundParamMeta
@@ -1917,6 +1921,8 @@
         const strokeParams = $('knockoutStrokeParams');
         const pathSelectEl = $('knockoutPathMorphType');
         const pathParams = $('knockoutPathMorphParams');
+        const letterSelectEl = $('knockoutLetterType');
+        const letterParams = $('knockoutLetterParams');
 
         if (!state.knockout) state.knockout = makeDefaultKnockout();
 
@@ -1925,7 +1931,7 @@
         [paddingInput, cornerInput, scaleInput, rotationInput, opacityInput, offsetXInput, offsetYInput].forEach((el) => {
             if (el) el.disabled = !isKnockoutMode;
         });
-        [transformSelect, fillSelectEl, strokeSelectEl, pathSelectEl].forEach((el) => {
+        [transformSelect, fillSelectEl, strokeSelectEl, pathSelectEl, letterSelectEl].forEach((el) => {
             if (el) el.disabled = !isKnockoutMode;
         });
 
@@ -1957,24 +1963,6 @@
             typeof state.knockout.offsetX === 'number' ? state.knockout.offsetX : 0;
         offsetYInput.value =
             typeof state.knockout.offsetY === 'number' ? state.knockout.offsetY : 0;
-
-        const updateBasic = () => {
-            if (!state.knockout) state.knockout = makeDefaultKnockout();
-            state.knockout.mode = modeSelect.value || 'fill';
-            state.knockout.paddingFactor = parseFloat(paddingInput.value) || 0;
-            state.knockout.cornerRadiusFactor = parseFloat(cornerInput.value) || 0;
-            state.knockout.scale = parseFloat(scaleInput.value) || 0;
-            state.knockout.rotationDeg = parseFloat(rotationInput.value) || 0;
-            state.knockout.opacity = parseFloat(opacityInput.value);
-            state.knockout.offsetX = parseFloat(offsetXInput.value) || 0;
-            state.knockout.offsetY = parseFloat(offsetYInput.value) || 0;
-        };
-        [modeSelect, paddingInput, cornerInput, scaleInput, rotationInput, opacityInput, offsetXInput, offsetYInput].forEach((el) => {
-            if (el) {
-                el.oninput = updateBasic;
-                el.onchange = updateBasic;
-            }
-        });
 
         fillSelect(transformSelect, [
             { value: 'none', label: 'None' },
@@ -2058,9 +2046,13 @@
             ko.mode = modeSelect.value || 'fill';
             ko.paddingFactor = clampNumber(parseFloat(paddingInput.value), 0, 0.5);
             ko.cornerRadiusFactor = clampNumber(parseFloat(cornerInput.value), 0, 1);
-            ko.scale = clampNumber(parseFloat(scaleInput.value), 0, 5);
+            const scaleVal = parseFloat(scaleInput.value);
+            ko.scale = Number.isFinite(scaleVal) ? clampNumber(scaleVal, 0, 5) : 1;
             ko.rotationDeg = clampNumber(parseFloat(rotationInput.value), -360, 360);
-            ko.opacity = clampNumber(parseFloat(opacityInput.value), 0, 1);
+            const opacityVal = parseFloat(opacityInput.value);
+            ko.opacity = Number.isFinite(opacityVal) ? clampNumber(opacityVal, 0, 1) : 1;
+            ko.offsetX = clampNumber(parseFloat(offsetXInput.value), -1000, 1000);
+            ko.offsetY = clampNumber(parseFloat(offsetYInput.value), -1000, 1000);
             const tr = buildAnimationDescriptor(transformSelect.value, transformSchema, transformParams);
             ko.transformAnimations = tr ? [tr] : [];
             const fill = buildColorDescriptor(fillSelectEl.value, fillParams, {
@@ -2075,6 +2067,8 @@
             ko.strokeAnimations = stroke ? [stroke] : [];
             const path = buildAnimationDescriptor(pathSelectEl.value, pathMorphSchema, pathParams);
             ko.pathMorphAnimations = path ? [path] : [];
+            const letterDesc = buildAnimationDescriptor(letterSelectEl.value, letterSchema, letterParams);
+            ko.letterAnimations = letterDesc ? [letterDesc] : [];
             state.knockout = ko;
         };
 
@@ -2084,6 +2078,8 @@
         scaleInput.oninput = sync;
         rotationInput.oninput = sync;
         opacityInput.oninput = sync;
+        offsetXInput.oninput = sync;
+        offsetYInput.oninput = sync;
         transformSelect.onchange = () => {
             renderParams(
                 transformParams,
@@ -2118,10 +2114,38 @@
             );
             sync();
         };
+        fillSelect(letterSelectEl, [
+            { value: 'none', label: 'None' },
+            { value: 'vibrate', label: 'Vibrate' },
+            { value: 'typingFall', label: 'TypingFall' },
+            { value: 'wave', label: 'Wave' },
+            { value: 'zigzag', label: 'ZigZag' },
+            { value: 'rotate', label: 'Rotate' },
+        ]);
+        const koLetter = (state.knockout.letterAnimations && state.knockout.letterAnimations[0]) || null;
+        letterSelectEl.value = (koLetter && koLetter.type) || 'none';
+        renderParams(
+            letterParams,
+            letterSchema[letterSelectEl.value] || {},
+            koLetter && koLetter.params,
+            letterParamMeta[letterSelectEl.value] || null,
+            getLetterDefaults(letterSelectEl.value),
+        );
+        letterSelectEl.onchange = () => {
+            renderParams(
+                letterParams,
+                letterSchema[letterSelectEl.value] || {},
+                {},
+                letterParamMeta[letterSelectEl.value] || null,
+                getLetterDefaults(letterSelectEl.value),
+            );
+            sync();
+        };
         transformParams.onchange = sync;
         fillParams.onchange = sync;
         strokeParams.onchange = sync;
         pathParams.onchange = sync;
+        letterParams.onchange = sync;
 
         sync();
     }

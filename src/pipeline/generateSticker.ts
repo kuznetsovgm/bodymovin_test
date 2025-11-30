@@ -41,6 +41,7 @@ import {
     RectShape,
     ShapeLayer,
     ShapeType,
+    TransformShape,
 } from '../interfaces/lottie';
 import { transformRegistry, colorRegistry } from '../animations/registry';
 import { applyPathMorphAnimations } from '../animations/pathMorph';
@@ -48,8 +49,14 @@ import { fontAnimationConfig } from '../config/animation-config';
 import {
     BackgroundLayerDescriptor,
     BackgroundLayerType,
+    GlyphPatternBackgroundDescriptor,
     KnockoutBackgroundOptions,
     PathMorphAnimationParams,
+    StripesBackgroundDescriptor,
+    TextLikeBackgroundDescriptor,
+    SolidBackgroundDescriptor,
+    FrameBackgroundDescriptor,
+    LetterContext,
 } from '../domain/types';
 import { convertOpentypePathToBezier } from '../shapes/bezier';
 import { buildLetterSeed } from '../shared/noise';
@@ -90,7 +97,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         height,
     );
 
-    const backgroundShapeLayers = buildBackgroundLayers(
+    const backgroundShapeLayers = await buildBackgroundLayers(
         layout,
         finalFontSize,
         backgroundLayers,
@@ -101,6 +108,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
             duration,
             seed,
         },
+        text,
     );
 
     const knockoutLayer = buildKnockoutBackgroundLayer(
@@ -143,9 +151,12 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
     );
     layer.shapes.push(lettersGroup);
 
-    const layers: ShapeLayer[] = [...backgroundShapeLayers];
+    const layers: ShapeLayer[] = [layer];
     if (knockoutLayer) layers.push(knockoutLayer);
-    layers.push(layer);
+    layers.push(...backgroundShapeLayers);
+    layers.forEach((l, idx) => {
+        l.ind = idx + 1;
+    });
 
     const sticker = buildStickerShell(text, width, height, frameRate, duration, layers);
     return sticker;
@@ -335,17 +346,19 @@ type BackgroundBuildContext = {
     seed: number;
 };
 
-function buildBackgroundLayers(
+async function buildBackgroundLayers(
     layout: ReturnType<typeof layoutText>,
     fontSize: number,
     descs: BackgroundLayerDescriptor[] | undefined,
     font: opentype.Font,
     ctx: BackgroundBuildContext,
-): ShapeLayer[] {
+    sourceText: string,
+): Promise<ShapeLayer[]> {
     if (!descs || !descs.length) return [];
 
     const layers: ShapeLayer[] = [];
     let layerIndex = 1;
+    const fontCache = new Map<string, opentype.Font>();
 
     for (const desc of descs) {
         const layer = buildBaseLayer(ctx.width, ctx.height, ctx.duration, `Background:${desc.type}`, layerIndex++);
@@ -366,11 +379,18 @@ function buildBackgroundLayers(
             hd: false,
         };
 
-        const shapes = buildBackgroundShapes(desc, layout, fontSize, font, ctx);
-        if (shapes.length === 0) continue;
+        const fontFileForLayer = extractBackgroundFontFile(desc);
+        const bgFont = await resolveBackgroundFont(fontFileForLayer, font, fontCache);
+        const { shapes, transform } = buildBackgroundShapes(desc, layout, fontSize, bgFont, ctx, sourceText);
+        if (shapes.length === 0 && !transform) continue;
 
-        group.it.push(...shapes);
-        group.np = group.it.length;
+        if (shapes.length) {
+            group.it.push(...shapes);
+        }
+        if (transform) {
+            group.it.push(transform);
+        }
+        group.np = group.it.length || 1;
         layer.shapes.push(group);
         layers.push(layer);
     }
@@ -378,13 +398,19 @@ function buildBackgroundLayers(
     return layers;
 }
 
+type ShapeBuildResult = {
+    shapes: any[];
+    transform?: TransformShape | null;
+};
+
 function buildBackgroundShapes(
     desc: BackgroundLayerDescriptor,
     layout: ReturnType<typeof layoutText>,
     fontSize: number,
-    font: opentype.Font,
+    fontForLayer: opentype.Font,
     ctx: BackgroundBuildContext,
-): any[] {
+    sourceText: string,
+): ShapeBuildResult {
     switch (desc.type) {
         case BackgroundLayerType.Solid:
             return buildSolidBackground(desc, ctx);
@@ -393,14 +419,15 @@ function buildBackgroundShapes(
         case BackgroundLayerType.Stripes:
             return buildStripesBackground(desc, ctx);
         case BackgroundLayerType.GlyphPattern:
+            return buildGlyphPatternBackground(desc, fontForLayer, ctx);
         case BackgroundLayerType.TextLike:
+            return buildTextLikeBackground(desc, layout, fontSize, fontForLayer, ctx, sourceText);
         default:
-            // Пока не реализовано — пропускаем
-            return [];
+            return { shapes: [] };
     }
 }
 
-function buildSolidBackground(desc: BackgroundLayerDescriptor, ctx: BackgroundBuildContext): any[] {
+function buildSolidBackground(desc: SolidBackgroundDescriptor, ctx: BackgroundBuildContext): ShapeBuildResult {
     const padding = Math.max(0, Math.min(0.5, desc.params?.paddingFactor ?? 0));
     const cornerRadius = Math.max(0, desc.params?.cornerRadius ?? 0);
     const width = ctx.width * (1 + padding * 2);
@@ -410,10 +437,22 @@ function buildSolidBackground(desc: BackgroundLayerDescriptor, ctx: BackgroundBu
     const fill = buildFillFromAnimations(desc.colorAnimations, ctx.duration, 20);
     const stroke = buildStrokeFromAnimations(desc.strokeAnimations, ctx.duration, 30);
 
-    return [rect, ...(fill ? [fill] : []), ...(stroke ? [stroke] : [])];
+    const transform = buildTransformShape(
+        desc.params?.scale,
+        desc.params?.rotationDeg,
+        desc.params?.opacity,
+        900,
+        desc.params?.offsetX,
+        desc.params?.offsetY,
+    );
+
+    return {
+        shapes: [rect, ...(fill ? [fill] : []), ...(stroke ? [stroke] : [])],
+        transform,
+    };
 }
 
-function buildFrameBackground(desc: BackgroundLayerDescriptor, ctx: BackgroundBuildContext): any[] {
+function buildFrameBackground(desc: FrameBackgroundDescriptor, ctx: BackgroundBuildContext): ShapeBuildResult {
     const padding = Math.max(0, Math.min(0.5, desc.params?.paddingFactor ?? 0.05));
     const cornerRadius = Math.max(0, desc.params?.cornerRadius ?? 0);
     const width = ctx.width * (1 + padding * 2);
@@ -421,16 +460,27 @@ function buildFrameBackground(desc: BackgroundLayerDescriptor, ctx: BackgroundBu
 
     const rect = createRectShape(width, height, cornerRadius, 40);
     const stroke = buildStrokeFromAnimations(desc.strokeAnimations, ctx.duration, 50);
-    // Рамка: заливку не рисуем
-    return [rect, ...(stroke ? [stroke] : [])];
+    const transform = buildTransformShape(
+        desc.params?.scale,
+        desc.params?.rotationDeg,
+        desc.params?.opacity,
+        901,
+        desc.params?.offsetX,
+        desc.params?.offsetY,
+    );
+
+    return {
+        shapes: [rect, ...(stroke ? [stroke] : [])],
+        transform,
+    };
 }
 
-function buildStripesBackground(desc: BackgroundLayerDescriptor, ctx: BackgroundBuildContext): any[] {
+function buildStripesBackground(desc: StripesBackgroundDescriptor, ctx: BackgroundBuildContext): ShapeBuildResult {
     const stripes = Math.max(1, Math.min(20, desc.params?.count ?? 5));
     const stripeHeightFactor = Math.max(0.01, Math.min(1, desc.params?.stripeHeightFactor ?? 0.1));
     const gapFactor = Math.max(0, Math.min(1, desc.params?.gapFactor ?? 0.05));
 
-    const shapes: any[] = [];
+    const shapes: GroupShapeElement[] = [];
     const totalHeight = ctx.height * (1 + gapFactor * 2);
     const stripeHeight = ctx.height * stripeHeightFactor;
     const usableHeight = totalHeight - stripeHeight;
@@ -448,12 +498,185 @@ function buildStripesBackground(desc: BackgroundLayerDescriptor, ctx: Background
             nm: `stripe_${i}`,
             hd: false,
         };
-        shapes.push(rect);
+        const phase =
+            desc.params?.colorPhaseStep != null ? (i * desc.params.colorPhaseStep) % 1 : i / stripes;
+        const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
+            duration: ctx.duration,
+            letterPhase: phase,
+            letterIndex: i,
+        });
+        const groupItems: any[] = [rect];
+        if (styles.fill) groupItems.push(styles.fill);
+        if (styles.stroke) groupItems.push(styles.stroke);
+        shapes.push({
+            ty: ShapeType.Group,
+            cix: 65 + i,
+            it: groupItems,
+            np: groupItems.length,
+            nm: `stripe_group_${i}`,
+            bm: 0,
+            hd: false,
+        } as GroupShapeElement);
     }
 
-    const fill = buildFillFromAnimations(desc.colorAnimations, ctx.duration, 80);
-    const stroke = buildStrokeFromAnimations(desc.strokeAnimations, ctx.duration, 90);
-    return [...shapes, ...(fill ? [fill] : []), ...(stroke ? [stroke] : [])];
+    const transform = buildTransformShape(
+        desc.params?.scale,
+        desc.params?.rotationDeg,
+        desc.params?.opacity,
+        902,
+        desc.params?.offsetX,
+        desc.params?.offsetY,
+    );
+
+    return {
+        shapes,
+        transform,
+    };
+}
+
+function buildGlyphPatternBackground(
+    desc: GlyphPatternBackgroundDescriptor,
+    font: opentype.Font,
+    ctx: BackgroundBuildContext,
+): ShapeBuildResult {
+    const text = (desc.text && desc.text.length > 0 ? desc.text : '*').replace(/\s+/g, '') || '*';
+    const spacingX = clamp(desc.params?.spacingXFactor ?? 0.2, 0, 2);
+    const spacingY = clamp(desc.params?.spacingYFactor ?? 0.2, 0, 2);
+    const cols = clamp(Math.round(desc.params?.gridColumns ?? 3), 1, 12);
+    const rows = clamp(Math.round(desc.params?.gridRows ?? 3), 1, 12);
+    const totalCells = Math.max(1, cols * rows);
+    const cellW = ctx.width / cols;
+    const cellH = ctx.height / rows;
+    const glyphW = cellW * (1 - spacingX * 0.5);
+    const glyphH = cellH * (1 - spacingY * 0.5);
+    const fontSize = Math.max(8, Math.min(glyphW, glyphH));
+    const groups: GroupShapeElement[] = [];
+
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const idx = row * cols + col;
+            const char = text[idx % text.length];
+            if (!char) continue;
+            const glyph = font.charToGlyph(char);
+            if (!glyph) continue;
+            const pathShapes = glyphToShapes(glyph, char, idx, {
+                fontSize,
+                duration: ctx.duration,
+                pathMorphAnimation: pickType(desc.pathMorphAnimations, PathMorphAnimationType.None),
+                pathMorphAnimations: desc.pathMorphAnimations,
+                seed: buildLetterSeed(idx, char.codePointAt(0) ?? idx, ctx.seed),
+            });
+
+            const letterTransform = buildBackgroundLetterTransform(desc.letterAnimations, {
+                letterIndex: idx,
+                x: -ctx.width / 2 + cellW * (col + 0.5),
+                y: -ctx.height / 2 + cellH * (row + 0.5),
+                duration: ctx.duration,
+                canvasHeight: ctx.height,
+            });
+
+            const items: any[] = [...pathShapes];
+            const phase =
+                desc.params?.colorPhaseStep != null ? (idx * desc.params.colorPhaseStep) % 1 : idx / totalCells;
+            const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
+                duration: ctx.duration,
+                letterPhase: phase,
+                letterIndex: idx,
+            });
+            if (styles.fill) items.push(styles.fill);
+            if (styles.stroke) items.push(styles.stroke);
+            if (letterTransform) items.push(letterTransform);
+
+            groups.push({
+                ty: ShapeType.Group,
+                cix: 6000 + idx,
+                it: items,
+                np: items.length,
+                nm: `glyph_bg_${idx}`,
+                bm: 0,
+                hd: false,
+            });
+        }
+    }
+
+    const transform = buildTransformShape(
+        desc.params?.scale,
+        desc.params?.rotationDeg,
+        desc.params?.opacity,
+        903,
+        desc.params?.offsetX,
+        desc.params?.offsetY,
+    );
+
+    return { shapes: groups, transform };
+}
+
+function buildTextLikeBackground(
+    desc: TextLikeBackgroundDescriptor,
+    baseLayout: ReturnType<typeof layoutText>,
+    baseFontSize: number,
+    font: opentype.Font,
+    ctx: BackgroundBuildContext,
+    originalText: string,
+): ShapeBuildResult {
+    const text = desc.text && desc.text.length ? desc.text : originalText;
+    let layout = baseLayout;
+    let fontSize = baseFontSize;
+    if (text !== originalText || desc.fontFile) {
+        const prepared = prepareLayout(text, font, baseFontSize, ctx.width, ctx.height);
+        layout = prepared.layout;
+        fontSize = prepared.finalFontSize;
+    }
+    const total = layout.length || 1;
+    const groups: GroupShapeElement[] = [];
+    layout.forEach((glyphInfo, idx) => {
+        const pathShapes = glyphToShapes(glyphInfo.glyph, glyphInfo.char, idx, {
+            fontSize,
+            duration: ctx.duration,
+            pathMorphAnimation: pickType(desc.pathMorphAnimations, PathMorphAnimationType.None),
+            pathMorphAnimations: desc.pathMorphAnimations,
+            seed: buildLetterSeed(idx, glyphInfo.char.codePointAt(0) ?? idx, ctx.seed),
+        });
+        const letterTransform = buildBackgroundLetterTransform(desc.letterAnimations, {
+            letterIndex: idx,
+            x: glyphInfo.x,
+            y: glyphInfo.y,
+            duration: ctx.duration,
+            canvasHeight: ctx.height,
+        });
+        const items: any[] = [...pathShapes];
+        const phase = desc.params?.colorPhaseStep
+            ? ((idx * desc.params.colorPhaseStep) % 1)
+            : (total - 1 - idx) / total;
+        const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
+            duration: ctx.duration,
+            letterPhase: phase,
+            letterIndex: idx,
+        });
+        if (styles.fill) items.push(styles.fill);
+        if (styles.stroke) items.push(styles.stroke);
+        if (letterTransform) items.push(letterTransform);
+        groups.push({
+            ty: ShapeType.Group,
+            cix: 6500 + idx,
+            it: items,
+            np: items.length,
+            nm: `text_bg_${idx}`,
+            bm: 0,
+            hd: false,
+        } as GroupShapeElement);
+    });
+
+    const transform = buildTransformShape(
+        desc.params?.scale,
+        desc.params?.rotationDeg,
+        desc.params?.opacity,
+        904,
+        desc.params?.offsetX,
+        desc.params?.offsetY,
+    );
+
+    return { shapes: groups, transform };
 }
 
 // ---------------- Knockout background (дырка) ----------------
@@ -468,7 +691,7 @@ function buildKnockoutBackgroundLayer(
 ): ShapeLayer | null {
     if (!opts) return null;
 
-    const paddingFactor = Math.max(0, Math.min(0.5, opts.paddingFactor ?? 0.05));
+    const paddingFactor = Math.max(0, Math.min(1, opts.paddingFactor ?? 0.05));
     const cornerRadiusFactor = Math.max(0, Math.min(1, opts.cornerRadiusFactor ?? 0));
 
     const layer = buildBaseLayer(ctx.width, ctx.height, ctx.duration, 'Knockout Background', layerIndex);
@@ -479,12 +702,17 @@ function buildKnockoutBackgroundLayer(
         transformRegistry,
     );
 
+    const transform = buildTransformShape(opts.scale, opts.rotationDeg, opts.opacity, 1700, opts.offsetX, opts.offsetY);
+
     const bounds = computeLayoutBounds(layout, fontSize, font);
     const textWidth = Math.max(1, bounds.maxX - bounds.minX);
     const textHeight = Math.max(1, bounds.maxY - bounds.minY);
 
-    const paddedWidth = textWidth * (1 + paddingFactor * 2);
-    const paddedHeight = textHeight * (1 + paddingFactor * 2);
+    const baseWidth = Math.max(textWidth, ctx.width);
+    const baseHeight = Math.max(textHeight, ctx.height);
+
+    const paddedWidth = baseWidth * (1 + paddingFactor * 2);
+    const paddedHeight = baseHeight * (1 + paddingFactor * 2);
     const cornerRadius = Math.min(paddedWidth, paddedHeight) * cornerRadiusFactor;
 
     const outerPath: PathShape = {
@@ -497,25 +725,27 @@ function buildKnockoutBackgroundLayer(
         ks: { a: 0, k: buildRectBezier(paddedWidth, paddedHeight), ix: 0 },
     };
 
-    const letterPaths = layout.flatMap((glyphInfo, idx) => {
+    const letterGroups: GroupShapeElement[] = layout.flatMap((glyphInfo, idx) => {
         const path = glyphInfo.glyph.getPath(glyphInfo.x, glyphInfo.y, fontSize);
         const beziers = convertOpentypePathToBezier(path);
-        if (!beziers || beziers.length === 0) return [];
+        if (!beziers || beziers.length === 0) {
+            return [];
+        }
 
         const morphDescs =
             opts.pathMorphAnimations && opts.pathMorphAnimations.length
                 ? opts.pathMorphAnimations
                 : [{ type: PathMorphAnimationType.None } as AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>];
 
-        return beziers.map((bez, contourIdx) => {
+        const pathShapes: PathShape[] = beziers.map((bez, contourIdx) => {
             const morphSeed = buildLetterSeed(idx, glyphInfo.char.codePointAt(0) ?? 0, ctx.seed) + contourIdx * 0.1;
             const morphKf =
                 morphDescs && morphDescs.length
                     ? applyPathMorphAnimations(bez, morphDescs as any, {
-                          fontSize,
-                          duration: ctx.duration,
-                          seed: morphSeed,
-                      })
+                        fontSize,
+                        duration: ctx.duration,
+                        seed: morphSeed,
+                    })
                     : null;
 
             const pathShape: PathShape = {
@@ -525,19 +755,42 @@ function buildKnockoutBackgroundLayer(
                 nm: `knockout_letter_${idx}_contour_${contourIdx}`,
                 cix: 300 + idx * 10 + contourIdx,
                 bm: 0,
-                ks: morphKf ? ({ a: 1, k: morphKf, ix: 0 } as any) : { a: 0, k: bez, ix: 0 },
+                ks: morphKf ? ({ a: 1, k: morphKf, ix: 0 } as any) : ({ a: 0, k: bez, ix: 0 } as any),
             };
             return pathShape;
         });
+        const letterTransform = buildBackgroundLetterTransform(opts.letterAnimations, {
+            letterIndex: idx,
+            x: glyphInfo.x,
+            y: glyphInfo.y,
+            duration: ctx.duration,
+            canvasHeight: ctx.height,
+        });
+
+        const group: GroupShapeElement = {
+            ty: ShapeType.Group,
+            cix: 1300 + idx,
+            it: [...pathShapes],
+            np: pathShapes.length,
+            nm: `knockout_letter_${idx}`,
+            bm: 0,
+            hd: false,
+        };
+        if (letterTransform) {
+            group.it.push(letterTransform);
+            group.np = group.it.length;
+        }
+        return [group];
     });
 
-    const shapes: any[] = [outerPath, ...letterPaths];
+    const shapes: any[] = [outerPath, ...letterGroups];
 
     const fill = buildFillFromAnimations(opts.colorAnimations, ctx.duration, 400, FillRule.EvenOdd);
     const stroke = buildStrokeFromAnimations(opts.strokeAnimations, ctx.duration, 410);
 
     if (fill) shapes.push(fill);
     if (stroke) shapes.push(stroke);
+    if (transform) shapes.push(transform);
 
     const group: GroupShapeElement = {
         ty: ShapeType.Group,
@@ -622,15 +875,19 @@ function buildFillFromAnimations(
     duration: number,
     cix: number,
     fillRule: FillRule = FillRule.NonZero,
+    fallbackBaseColor?: [number, number, number],
+    fallbackOpacity?: number,
+    phase: number | ((index: number) => number) = 0,
 ) {
-    const baseColor = resolveBaseColor(animations);
+    const baseColor = resolveBaseColor(animations, fallbackBaseColor);
     if (!baseColor) return null;
 
+    const normalizedOpacity = fallbackOpacity != null ? Math.max(0, Math.min(1, fallbackOpacity)) : undefined;
     const track = applyColorsWithCompose(
         animations,
-        baseColor,
+        normalizedOpacity != null ? ([...baseColor, normalizedOpacity] as any) : baseColor,
         { duration },
-        0,
+        typeof phase === 'number' ? phase : 0,
         colorRegistry,
     );
 
@@ -648,20 +905,96 @@ function buildFillFromAnimations(
     };
 }
 
+function buildTransformShape(
+    scale: number | undefined,
+    rotationDeg: number | undefined,
+    opacity: number | undefined,
+    cix: number,
+    offsetX: number | undefined,
+    offsetY: number | undefined,
+): TransformShape | null {
+    const hasScale = typeof scale === 'number' && scale > 0 && scale !== 1;
+    const hasRotation = typeof rotationDeg === 'number' && rotationDeg !== 0;
+    const hasOpacity = typeof opacity === 'number' && opacity >= 0 && opacity <= 1 && opacity !== 1;
+    const hasOffsetX = typeof offsetX === 'number' && offsetX !== 0;
+    const hasOffsetY = typeof offsetY === 'number' && offsetY !== 0;
+    if (!hasScale && !hasRotation && !hasOpacity && !hasOffsetX && !hasOffsetY) {
+        return null;
+    }
+    return {
+        ty: ShapeType.TransformShape,
+        cix,
+        nm: 'BackgroundTransform',
+        bm: 0,
+        hd: false,
+        p: { a: 0, k: [offsetX || 0, offsetY || 0], ix: 2 },
+        a: { a: 0, k: [0, 0], ix: 1 },
+        s: { a: 0, k: [hasScale ? scale * 100 : 100, hasScale ? scale * 100 : 100], ix: 3 },
+        r: { a: 0, k: hasRotation ? rotationDeg! : 0, ix: 6 },
+        o: { a: 0, k: hasOpacity ? opacity! * 100 : 100, ix: 7 },
+        sk: { a: 0, k: 0, ix: 4 },
+        sa: { a: 0, k: 0, ix: 5 },
+    };
+}
+
+function buildBackgroundLetterTransform(
+    letterAnimations: LetterAnimationDescriptor[] | undefined,
+    ctx: LetterContext,
+): TransformShape {
+    return applyLetterAnimations(letterAnimations, ctx);
+}
+
+
+async function resolveBackgroundFont(
+    fontFile: string | undefined,
+    fallback: opentype.Font,
+    cache: Map<string, opentype.Font>,
+): Promise<opentype.Font> {
+    if (!fontFile) return fallback;
+    if (cache.has(fontFile)) {
+        return cache.get(fontFile)!;
+    }
+    const safe = fontFile.replace(/(\.\.(\/|\\))/g, '').replace(/^(\.\/|\/)+/, '');
+    const rootDir = path.resolve(fontAnimationConfig.fontDirectory);
+    const glyphDir = path.join(rootDir, 'glyphs', safe);
+    const regularPath = path.join(rootDir, safe);
+    const candidates = [glyphDir, regularPath];
+    for (const candidate of candidates) {
+        try {
+            const loaded = await loadFont(candidate);
+            cache.set(fontFile, loaded);
+            return loaded;
+        } catch (err) {
+            continue;
+        }
+    }
+    cache.set(fontFile, fallback);
+    return fallback;
+}
+
+function extractBackgroundFontFile(desc: BackgroundLayerDescriptor): string | undefined {
+    if ('fontFile' in desc && typeof desc.fontFile === 'string' && desc.fontFile) {
+        return desc.fontFile;
+    }
+    return undefined;
+}
+
 function buildStrokeFromAnimations(
     animations: ColorAnimationDescriptor[] | undefined,
     duration: number,
     cix: number,
+    fallbackColor?: [number, number, number],
+    fallbackWidth?: number,
+    phase: number | ((index: number) => number) = 0,
 ) {
-    if (!animations || !animations.length) return null;
-    const strokeStyle = resolveStrokeStyle(animations);
+    const strokeStyle = resolveStrokeStyle(animations, fallbackColor, fallbackWidth);
     if (!strokeStyle) return null;
 
     const track = applyColorsWithCompose(
         animations,
         strokeStyle.color,
         { duration },
-        0,
+        typeof phase === 'number' ? phase : 0,
         colorRegistry,
     );
 
@@ -698,16 +1031,22 @@ function resolveBaseColor(
 
 function resolveStrokeStyle(
     animations: ColorAnimationDescriptor[] | undefined,
+    fallbackColor?: [number, number, number],
+    fallbackWidth?: number,
 ): { color: [number, number, number]; width: number } | null {
-    if (!animations || !animations.length) return null;
-    const sorted = [...animations].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-    for (const desc of sorted) {
-        const params = desc.params as any;
-        const color = extractBaseColor(params);
-        const width = params?.strokeWidth as number | undefined;
-        if (color && typeof width === 'number' && Number.isFinite(width)) {
-            return { color, width };
+    if (animations && animations.length) {
+        const sorted = [...animations].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+        for (const desc of sorted) {
+            const params = desc.params as any;
+            const color = extractBaseColor(params);
+            const width = params?.strokeWidth as number | undefined;
+            if (color && typeof width === 'number' && Number.isFinite(width)) {
+                return { color, width };
+            }
         }
+    }
+    if (fallbackColor && typeof fallbackWidth === 'number' && Number.isFinite(fallbackWidth)) {
+        return { color: fallbackColor, width: fallbackWidth };
     }
     return null;
 }
