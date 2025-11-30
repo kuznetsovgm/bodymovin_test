@@ -51,19 +51,108 @@ export enum BackgroundLayerType {
     TextLike = 'textLike',
 }
 
-export type BackgroundLayerDescriptor = {
-    type: BackgroundLayerType;
+export type BackgroundBase = {
     transformAnimations?: TransformAnimationDescriptor[];
     colorAnimations?: ColorAnimationDescriptor[];
     strokeAnimations?: ColorAnimationDescriptor[];
     pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
-    /** Для паттернов на базе шрифта */
-    fontFile?: string;
-    /** Текст паттерна */
-    text?: string;
-    /** Специализированные настройки конкретного вида фона */
-    params?: any;
+    letterAnimations?: LetterAnimationDescriptor[];
 };
+
+export type BackgroundScaleRotateOpacity = {
+    /** Масштаб фона (1 = исходный размер) */
+    scale?: number;
+    /** Поворот фона в градусах */
+    rotationDeg?: number;
+    /** Прозрачность (0..1) */
+    opacity?: number;
+    /** Смещение по X (px) */
+    offsetX?: number;
+    /** Смещение по Y (px) */
+    offsetY?: number;
+};
+
+export type SolidBackgroundParams = BackgroundScaleRotateOpacity & {
+    paddingFactor?: number;
+    cornerRadius?: number;
+    baseColor?: [number, number, number];
+    strokeColor?: [number, number, number];
+    strokeWidth?: number;
+};
+
+export type FrameBackgroundParams = BackgroundScaleRotateOpacity & {
+    paddingFactor?: number;
+    cornerRadius?: number;
+    strokeColor?: [number, number, number];
+    strokeWidth?: number;
+};
+
+export type StripesBackgroundParams = BackgroundScaleRotateOpacity & {
+    count?: number;
+    stripeHeightFactor?: number;
+    gapFactor?: number;
+    cornerRadius?: number;
+    /** Смещение фазы цвета между полосами (0..1), по умолчанию 0.1 */
+    colorPhaseStep?: number;
+    baseColor?: [number, number, number];
+    strokeColor?: [number, number, number];
+    strokeWidth?: number;
+};
+
+export type GlyphPatternBackgroundParams = BackgroundScaleRotateOpacity & {
+    paddingFactor?: number;
+    cornerRadius?: number;
+    gridColumns?: number;
+    gridRows?: number;
+    spacingXFactor?: number;
+    spacingYFactor?: number;
+    /** Сдвиг фазы цвета между буквами/плитками (0..1) */
+    colorPhaseStep?: number;
+    /** Будущее развитие: плотность, шаг сетки и т.п. */
+};
+
+export type TextLikeBackgroundParams = BackgroundScaleRotateOpacity & {
+    paddingFactor?: number;
+    cornerRadius?: number;
+    /** Сдвиг фазы цвета между буквами (0..1) */
+    colorPhaseStep?: number;
+};
+
+export type SolidBackgroundDescriptor = BackgroundBase & {
+    type: BackgroundLayerType.Solid;
+    params?: SolidBackgroundParams;
+};
+
+export type FrameBackgroundDescriptor = BackgroundBase & {
+    type: BackgroundLayerType.Frame;
+    params?: FrameBackgroundParams;
+};
+
+export type StripesBackgroundDescriptor = BackgroundBase & {
+    type: BackgroundLayerType.Stripes;
+    params?: StripesBackgroundParams;
+};
+
+export type GlyphPatternBackgroundDescriptor = BackgroundBase & {
+    type: BackgroundLayerType.GlyphPattern;
+    fontFile?: string;
+    text?: string;
+    params?: GlyphPatternBackgroundParams;
+};
+
+export type TextLikeBackgroundDescriptor = BackgroundBase & {
+    type: BackgroundLayerType.TextLike;
+    fontFile?: string;
+    text?: string;
+    params?: TextLikeBackgroundParams;
+};
+
+export type BackgroundLayerDescriptor =
+    | SolidBackgroundDescriptor
+    | FrameBackgroundDescriptor
+    | StripesBackgroundDescriptor
+    | GlyphPatternBackgroundDescriptor
+    | TextLikeBackgroundDescriptor;
 
 export type KnockoutBackgroundMode = 'fill' | 'stroke';
 
@@ -72,12 +161,23 @@ export type KnockoutBackgroundOptions = {
     colorAnimations?: ColorAnimationDescriptor[];
     strokeAnimations?: ColorAnimationDescriptor[];
     pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
+    letterAnimations?: LetterAnimationDescriptor[];
     /** 'fill' — вырез по заливке букв; 'stroke' — по контуру (пока ведёт себя как fill) */
     mode?: KnockoutBackgroundMode;
     /** Запас вокруг текста относительно его габаритов */
     paddingFactor?: number;
     /** Скругление углов фоновой плашки (0..1 от min(width,height)) */
     cornerRadiusFactor?: number;
+    /** Масштаб плашки */
+    scale?: number;
+    /** Поворот плашки (deg) */
+    rotationDeg?: number;
+    /** Прозрачность 0..1 */
+    opacity?: number;
+    /** Смещение по X (px) */
+    offsetX?: number;
+    /** Смещение по Y (px) */
+    offsetY?: number;
 };
 
 export type ComposeFn<TPatch, TCtx = any> = (base: TPatch, next: TPatch, ctx: TCtx) => TPatch;

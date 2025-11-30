@@ -30,6 +30,19 @@
                             <input id="previewText" type="text" value="Пример текста">
                         </label>
                     </div>
+                    <div class="form-section" id="backgroundModeSection">
+                        <h3>Режим фона</h3>
+                        <div class="grid grid-3">
+                            <label class="checkbox">
+                                <input type="radio" name="bgMode" id="bgModeLayers" value="layers" checked>
+                                Обычные фоны
+                            </label>
+                            <label class="checkbox">
+                                <input type="radio" name="bgMode" id="bgModeKnockout" value="knockout">
+                                Knockout (дырки)
+                            </label>
+                        </div>
+                    </div>
                     <div class="grid grid-3">
                         <label title="Частота кадров анимации (FPS)">
                             FPS
@@ -45,13 +58,18 @@
                                 <input id="duration" type="number" min="2" step="1">
                            </div>
                        </label>
-                        <label title="Файл шрифта из каталога fonts">
+                    </div>
+                    <div class="grid grid-3">
+                        <label title="Файл шрифта из каталога fonts" style="grid-column: span 1">
                             Имя файла шрифта
                             <select id="fontFile"></select>
                         </label>
                     </div>
+                    <div class="font-preview-box" id="fontFilePreviewBox">
+                        <div id="fontFilePreviewSample" class="font-preview-sample"></div>
+                    </div>
 
-                    <div class="animations">
+                    <div class="animations" id="textAnimationsSection">
                         <h3>Трансформация</h3>
                         <div class="grid grid-3">
                             <label>
@@ -92,23 +110,123 @@
                         </div>
 
                         <h3>Морфинг контура</h3>
-                        <div class="grid grid-3">
-                            <label>
-                                Тип
-                                <select id="pathMorphType"></select>
-                            </label>
-                            <div>
-                                <div id="pathMorphParams" class="params"></div>
-                                <div id="pathWarning" class="warning-message"></div>
-                            </div>
+                    <div class="grid grid-3">
+                        <label>
+                            Тип
+                            <select id="pathMorphType"></select>
+                        </label>
+                        <div>
+                            <div id="pathMorphParams" class="params"></div>
+                            <div id="pathWarning" class="warning-message"></div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="actions">
-                        <label class="checkbox">
-                            <input id="enabled" type="checkbox" checked>
-                            Включен
+                <div class="form-section" id="backgroundLayersSection">
+                    <h3>Фоновые слои</h3>
+                    <div class="background-toolbar">
+                        <button id="addBackgroundLayerBtn" type="button">Добавить слой</button>
+                    </div>
+                    <div id="backgroundLayersList" class="background-list"></div>
+                    <div id="backgroundLayerEditor" class="background-editor"></div>
+                </div>
+
+                <div class="form-section" id="knockoutSection" style="display:none">
+                    <h3>Knockout фон (дырка)</h3>
+                    <div class="grid grid-3">
+                        <label>
+                            Режим
+                            <select id="knockoutMode"></select>
                         </label>
+                    </div>
+                    <div class="grid grid-3">
+                        <label>
+                            paddingFactor
+                            <input id="knockoutPadding" type="number" step="0.01" min="0" max="0.5">
+                        </label>
+                        <label>
+                            cornerRadiusFactor
+                            <input id="knockoutCornerRadius" type="number" step="0.01" min="0" max="1">
+                        </label>
+                        <label>
+                            scale
+                            <input id="knockoutScale" type="number" step="0.01" min="0" max="5">
+                        </label>
+                    </div>
+                    <div class="grid grid-3">
+                        <label>
+                            rotationDeg
+                            <input id="knockoutRotation" type="number" step="1" min="-360" max="360">
+                        </label>
+                        <label>
+                            opacity
+                            <input id="knockoutOpacity" type="number" step="0.01" min="0" max="1">
+                        </label>
+                        <label>
+                            offsetX
+                            <input id="knockoutOffsetX" type="number" step="1">
+                        </label>
+                        <label>
+                            offsetY
+                            <input id="knockoutOffsetY" type="number" step="1">
+                        </label>
+                    </div>
+                    <div class="animations">
+                        <h4>Анимации knockout</h4>
+                        <div class="grid grid-3">
+                            <label>
+                                Transform
+                                <select id="knockoutTransformType"></select>
+                            </label>
+                            <div id="knockoutTransformParams" class="params"></div>
+                        </div>
+                        <div class="grid grid-3">
+                            <label>
+                                Fill
+                                <select id="knockoutFillType"></select>
+                            </label>
+                            <div id="knockoutFillParams" class="params"></div>
+                        </div>
+                        <div class="grid grid-3">
+                            <label>
+                                Stroke
+                                <select id="knockoutStrokeType"></select>
+                            </label>
+                            <div id="knockoutStrokeParams" class="params"></div>
+                        </div>
+                        <div class="grid grid-3">
+                            <label>
+                                PathMorph
+                                <select id="knockoutPathMorphType"></select>
+                            </label>
+                            <div id="knockoutPathMorphParams" class="params"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section" id="fontPreviewSection">
+                    <h3>Быстрый предпросмотр шрифтов</h3>
+                    <div class="grid grid-3">
+                        <label>
+                            Шрифт
+                            <select id="fontPreviewSelect"></select>
+                        </label>
+                        <label>
+                            Текст
+                            <input id="fontPreviewText" type="text" value="Abc АБВ 123 ✦☆">
+                        </label>
+                    </div>
+                    <div id="fontPreviewBox" class="font-preview-box">
+                        <div id="fontPreviewLabel" class="font-preview-label"></div>
+                        <div id="fontPreviewSample" class="font-preview-sample">Abc АБВ 123 ✦☆</div>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <label class="checkbox">
+                        <input id="enabled" type="checkbox" checked>
+                        Включен
+                    </label>
                         <button id="previewBtn">Предпросмотр</button>
                         <button id="saveBtn">Сохранить в БД</button>
                         <span id="status" class="status"></span>

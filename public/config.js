@@ -8,6 +8,10 @@
         dotLottieInstance: null,
         dotLottieUrl: null,
         initialized: false,
+        backgroundLayers: [],
+        activeBackgroundIndex: null,
+        knockout: null,
+        backgroundMode: 'layers',
     };
     const MIN_DURATION_FRAMES = 2;
 
@@ -95,6 +99,63 @@
             skewMax: 'number',
             skewBase: 'number',
             swingAmplitudeScale: 'number',
+        },
+    };
+
+    const backgroundParamSchema = {
+        solid: {
+            paddingFactor: 'number',
+            cornerRadius: 'number',
+            scale: 'number',
+            rotationDeg: 'number',
+            opacity: 'number',
+            offsetX: 'number',
+            offsetY: 'number',
+        },
+        frame: {
+            paddingFactor: 'number',
+            cornerRadius: 'number',
+            scale: 'number',
+            rotationDeg: 'number',
+            opacity: 'number',
+            offsetX: 'number',
+            offsetY: 'number',
+        },
+        stripes: {
+            count: 'number',
+            stripeHeightFactor: 'number',
+            gapFactor: 'number',
+            cornerRadius: 'number',
+            colorPhaseStep: 'number',
+            scale: 'number',
+            rotationDeg: 'number',
+            opacity: 'number',
+            offsetX: 'number',
+            offsetY: 'number',
+        },
+        glyphPattern: {
+            paddingFactor: 'number',
+            cornerRadius: 'number',
+            gridColumns: 'number',
+            gridRows: 'number',
+            spacingXFactor: 'number',
+            spacingYFactor: 'number',
+            colorPhaseStep: 'number',
+            scale: 'number',
+            rotationDeg: 'number',
+            opacity: 'number',
+            offsetX: 'number',
+            offsetY: 'number',
+        },
+        textLike: {
+            paddingFactor: 'number',
+            cornerRadius: 'number',
+            colorPhaseStep: 'number',
+            scale: 'number',
+            rotationDeg: 'number',
+            opacity: 'number',
+            offsetX: 'number',
+            offsetY: 'number',
         },
     };
 
@@ -312,6 +373,29 @@
                 state.meta.defaults.pathMorphAnimationConfig[type]) ||
             null
         );
+    }
+
+    function getBackgroundParamMeta(type) {
+        const meta =
+            state.meta &&
+            state.meta.defaults &&
+            state.meta.defaults.backgroundParamMeta &&
+            state.meta.defaults.backgroundParamMeta[type];
+        return meta || {};
+    }
+
+    function getBackgroundDefaults(key) {
+        return (
+            (state.meta &&
+                state.meta.defaults &&
+                state.meta.defaults.backgroundDefaults &&
+                state.meta.defaults.backgroundDefaults[key]) ||
+            null
+        );
+    }
+
+    function deepCopy(obj) {
+        return obj == null ? obj : JSON.parse(JSON.stringify(obj));
     }
 
     function $(id) {
@@ -655,6 +739,144 @@
             return parts;
         }
         return undefined;
+    }
+
+    function clampNumber(val, min, max) {
+        if (typeof val !== 'number' || Number.isNaN(val)) return min ?? 0;
+        const lo = typeof min === 'number' ? min : -Infinity;
+        const hi = typeof max === 'number' ? max : Infinity;
+        return Math.min(hi, Math.max(lo, val));
+    }
+
+    function normalizeBackgroundParams(type, params) {
+        const meta = getBackgroundParamMeta(type) || {};
+        const normalized = { ...(params || {}) };
+        Object.keys(meta).forEach((key) => {
+            const cfg = meta[key];
+            if (typeof normalized[key] === 'number') {
+                normalized[key] = clampNumber(
+                    normalized[key],
+                    cfg.min ?? normalized[key],
+                    cfg.max ?? normalized[key],
+                );
+            }
+        });
+        return normalized;
+    }
+
+    function makeDefaultBackgroundLayer(type) {
+        const preset =
+            (type === 'solid' && getBackgroundDefaults('solid')) ||
+            (type === 'frame' && getBackgroundDefaults('frame')) ||
+            (type === 'stripes' && getBackgroundDefaults('stripes')) ||
+            (type === 'glyphPattern' && getBackgroundDefaults('glyphPattern')) ||
+            (type === 'textLike' && getBackgroundDefaults('textLike'));
+        if (preset) return deepCopy(preset);
+        if (type === 'frame') {
+            return {
+                type,
+                params: { paddingFactor: 0.05, cornerRadius: 8 },
+                strokeAnimations: [
+                    { type: 'none', params: { colors: [[1, 1, 1, 1]], times: [0], loop: false, strokeWidth: 2 } },
+                ],
+            };
+        }
+        if (type === 'stripes') {
+            return {
+                type,
+                params: { count: 5, stripeHeightFactor: 0.1, gapFactor: 0.05, cornerRadius: 0 },
+                colorAnimations: [
+                    { type: 'none', params: { colors: [[0.2, 0.2, 0.2, 1]], times: [0], loop: false } },
+                ],
+            };
+        }
+        if (type === 'glyphPattern') {
+            return {
+                type,
+                text: '*',
+                params: {
+                    paddingFactor: 0.1,
+                    gridColumns: 2,
+                    gridRows: 2,
+                    spacingXFactor: 0.3,
+                    spacingYFactor: 0.3,
+                    colorPhaseStep: 0.1,
+                },
+                colorAnimations: [
+                    { type: 'none', params: { colors: [[0.8, 0.8, 0.8, 1]], times: [0], loop: false } },
+                ],
+            };
+        }
+        if (type === 'textLike') {
+            return {
+                type,
+                text: '',
+                params: { paddingFactor: 0, colorPhaseStep: 0.1 },
+                colorAnimations: [
+                    { type: 'none', params: { colors: [[0.4, 0.4, 0.4, 0.3]], times: [0], loop: false } },
+                ],
+            };
+        }
+        return {
+            type,
+            params: { paddingFactor: 0, cornerRadius: 0 },
+            colorAnimations: [
+                { type: 'none', params: { colors: [[0.1, 0.1, 0.1, 1]], times: [0], loop: false } },
+            ],
+        };
+    }
+
+    function makeDefaultKnockout() {
+        const preset = getBackgroundDefaults('knockout');
+        if (preset) return deepCopy(preset);
+        return {
+            mode: 'fill',
+            paddingFactor: 0.05,
+            cornerRadiusFactor: 0,
+            colorAnimations: [{ type: 'none', params: { colors: [[0, 0, 0, 0.8]], times: [0], loop: false } }],
+            strokeAnimations: [
+                { type: 'none', params: { colors: [[1, 1, 1, 1]], times: [0], loop: false, strokeWidth: 2 } },
+            ],
+        };
+    }
+
+    function ensureGlyphFontLoaded(fontFile) {
+        if (!fontFile) return;
+        const existing = document.getElementById('glyphPreviewFontStyle');
+        if (existing && existing.dataset.fontFile === fontFile) return;
+        if (existing) existing.remove();
+        const style = document.createElement('style');
+        style.id = 'glyphPreviewFontStyle';
+        style.dataset.fontFile = fontFile;
+        // Пытаемся сначала из fonts/glyphs, затем из fonts
+        style.textContent = `
+@font-face {
+    font-family: 'glyphPreviewFont';
+    src: url('./fonts/glyphs/${fontFile}') format('truetype'),
+         url('./fonts/${fontFile}') format('truetype');
+    font-display: swap;
+}
+`;
+        document.head.appendChild(style);
+    }
+
+    function ensureFontPreviewFace(fontFile) {
+        if (!fontFile) return;
+        const existing = document.getElementById('fontPreviewStyle');
+        if (existing && existing.dataset.fontFile === fontFile) return;
+        if (existing) existing.remove();
+        const style = document.createElement('style');
+        style.id = 'fontPreviewStyle';
+        style.dataset.fontFile = fontFile;
+        style.textContent = `
+@font-face {
+    font-family: 'fontPreviewFace';
+    src: url('./fonts/glyphs/${fontFile}') format('truetype'),
+         url('./fonts/${fontFile}') format('truetype');
+    font-display: swap;
+}
+`;
+        document.head.appendChild(style);
     }
 
     function renderParams(container, schema, values, meta, defaults) {
@@ -1110,6 +1332,901 @@
         return result;
     }
 
+    function getBackgroundTypeOptions() {
+        if (
+            state.meta &&
+            state.meta.defaults &&
+            Array.isArray(state.meta.defaults.backgroundLayerTypes)
+        ) {
+            return state.meta.defaults.backgroundLayerTypes;
+        }
+        return [
+            { value: 'solid', label: 'Solid' },
+            { value: 'frame', label: 'Frame' },
+            { value: 'stripes', label: 'Stripes' },
+            { value: 'glyphPattern', label: 'GlyphPattern' },
+            { value: 'textLike', label: 'TextLike' },
+        ];
+    }
+
+    function renderBackgroundLayers() {
+        const list = $('backgroundLayersList');
+        const addBtn = $('addBackgroundLayerBtn');
+        if (!list) return;
+
+        if (state.backgroundMode !== 'layers') {
+            if (addBtn) addBtn.disabled = true;
+            list.innerHTML = '';
+            const info = document.createElement('div');
+            info.className = 'params-message';
+            info.textContent = 'Режим knockout активен — фоновые слои недоступны';
+            list.appendChild(info);
+            state.activeBackgroundIndex = null;
+            renderBackgroundEditor(true);
+            return;
+        }
+
+        if (addBtn) addBtn.disabled = false;
+        list.innerHTML = '';
+        if (!Array.isArray(state.backgroundLayers) || state.backgroundLayers.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'params-message';
+            empty.textContent = 'Слои не добавлены';
+            list.appendChild(empty);
+            state.activeBackgroundIndex = null;
+            renderBackgroundEditor();
+            return;
+        }
+
+        state.backgroundLayers.forEach((layer, idx) => {
+            const item = document.createElement('div');
+            item.className = 'variant-item' + (state.activeBackgroundIndex === idx ? ' active' : '');
+            const title = document.createElement('div');
+            title.className = 'variant-title';
+            const label = document.createElement('span');
+            label.textContent = layer.type || 'layer';
+            title.appendChild(label);
+            item.appendChild(title);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.textContent = '✕';
+            removeBtn.className = 'small-button';
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                state.backgroundLayers.splice(idx, 1);
+                if (state.activeBackgroundIndex === idx) {
+                    state.activeBackgroundIndex = null;
+                } else if ((state.activeBackgroundIndex || 0) > idx) {
+                    state.activeBackgroundIndex -= 1;
+                }
+                renderBackgroundLayers();
+            });
+            item.appendChild(removeBtn);
+
+            item.addEventListener('click', () => {
+                state.activeBackgroundIndex = idx;
+                renderBackgroundLayers();
+                renderBackgroundEditor();
+            });
+            list.appendChild(item);
+        });
+        if (state.activeBackgroundIndex == null || state.activeBackgroundIndex >= state.backgroundLayers.length) {
+            state.activeBackgroundIndex = 0;
+        }
+        renderBackgroundEditor();
+    }
+
+    function renderBackgroundEditor(disabledMode = false) {
+        const container = $('backgroundLayerEditor');
+        if (!container) return;
+        container.innerHTML = '';
+        if (disabledMode) {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'params-message';
+            placeholder.textContent = 'Редактор слоёв выключен (knockout режим)';
+            container.appendChild(placeholder);
+            return;
+        }
+        const idx = state.activeBackgroundIndex;
+        if (idx == null || !state.backgroundLayers[idx]) {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'params-message';
+            placeholder.textContent = 'Выберите слой для редактирования';
+            container.appendChild(placeholder);
+            return;
+        }
+
+        const layer = state.backgroundLayers[idx];
+        const typeRow = document.createElement('div');
+        typeRow.className = 'grid grid-3';
+        const typeLabel = document.createElement('label');
+        typeLabel.textContent = 'Тип слоя';
+        const typeSelect = document.createElement('select');
+        getBackgroundTypeOptions().forEach((opt) => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            typeSelect.appendChild(o);
+        });
+        typeSelect.value = layer.type || '';
+        typeLabel.appendChild(typeSelect);
+        typeRow.appendChild(typeLabel);
+        container.appendChild(typeRow);
+
+        const paramsContainer = document.createElement('div');
+        paramsContainer.className = 'params';
+        container.appendChild(paramsContainer);
+
+        const fontRow = document.createElement('div');
+        fontRow.className = 'grid grid-3';
+        const fontLabel = document.createElement('label');
+        fontLabel.textContent = 'fontFile (для паттернов)';
+        const fontInput = document.createElement('select');
+        const fontOptions = (state.meta && (state.meta.glyphFonts || state.meta.fonts)) || [];
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '—';
+        fontInput.appendChild(emptyOpt);
+        fontOptions.forEach((name) => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            fontInput.appendChild(opt);
+        });
+        fontInput.value = layer.fontFile || '';
+        fontInput.disabled = layer.type !== 'glyphPattern' && layer.type !== 'textLike';
+        fontLabel.appendChild(fontInput);
+
+        const glyphPreview = document.createElement('div');
+        glyphPreview.className = 'glyph-preview';
+
+        const textLabel = document.createElement('label');
+        textLabel.textContent = 'text (паттерн)';
+        const textInput = document.createElement('input');
+        textInput.type = 'text';
+        textInput.value = layer.text || '';
+        textInput.disabled = layer.type !== 'glyphPattern' && layer.type !== 'textLike';
+        textLabel.appendChild(textInput);
+        fontRow.appendChild(fontLabel);
+        fontRow.appendChild(glyphPreview);
+        fontRow.appendChild(textLabel);
+        container.appendChild(fontRow);
+
+        const params = normalizeBackgroundParams(layer.type, layer.params || {});
+        const meta = state.meta && state.meta.defaults && state.meta.defaults.backgroundParamMeta
+            ? state.meta.defaults.backgroundParamMeta[layer.type] || {}
+            : {};
+        renderParams(paramsContainer, backgroundParamSchema[layer.type] || {}, params, meta, null);
+
+        // Привязки инпутов font/text/params
+        typeSelect.addEventListener('change', () => {
+            layer.type = typeSelect.value;
+            layer.params = normalizeBackgroundParams(layer.type, {});
+            if (layer.type !== 'glyphPattern' && layer.type !== 'textLike') {
+                layer.fontFile = undefined;
+                layer.text = undefined;
+            }
+            renderBackgroundEditor();
+            renderBackgroundLayers();
+        });
+
+        const renderGlyphPreview = (fontFile) => {
+            glyphPreview.innerHTML = '';
+            if (!fontFile) {
+                glyphPreview.textContent = '—';
+                return;
+            }
+            ensureGlyphFontLoaded(fontFile);
+            glyphPreview.textContent = 'Загрузка...';
+            fetch(`./api/glyphs?font=${encodeURIComponent(fontFile)}`)
+                .then((res) => res.json())
+                .then((data) => {
+                    glyphPreview.innerHTML = '';
+                    if (!data || !Array.isArray(data.glyphs) || !data.glyphs.length) {
+                        glyphPreview.textContent = 'Глифы не найдены';
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'glyph-preview-table';
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    ['Glyph', 'Literal', 'Name', 'Cmds', 'Pts'].forEach((h) => {
+                        const th = document.createElement('th');
+                        th.textContent = h;
+                        headerRow.appendChild(th);
+                    });
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+
+                    const tbody = document.createElement('tbody');
+                    const toLiteral = (ch) => {
+                        if (ch === ' ') return '` `';
+                        return '`' + ch + '`';
+                    };
+                    data.glyphs.slice(0, 2000).forEach((g) => {
+                        const tr = document.createElement('tr');
+
+                        const tdChar = document.createElement('td');
+                        tdChar.textContent = g.char;
+                        tdChar.style.fontFamily = 'glyphPreviewFont';
+                        tdChar.className = 'glyph-char-cell';
+
+                        const tdLiteral = document.createElement('td');
+                        tdLiteral.textContent = toLiteral(g.char);
+                        tdLiteral.className = 'glyph-literal-cell';
+                        tdLiteral.title = 'Клик для копирования символа';
+
+                        const tdName = document.createElement('td');
+                        tdName.textContent = g.name || '';
+
+                        const tdCmds = document.createElement('td');
+                        tdCmds.textContent = g.commands && g.commands > 0 ? String(g.commands) : '';
+                        const tdPts = document.createElement('td');
+                        tdPts.textContent = g.points && g.points > 0 ? String(Math.round(g.points)) : '';
+
+                        const copyValue = g.char;
+                        tr.style.cursor = 'pointer';
+                        tr.addEventListener('click', () => {
+                            if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(copyValue).catch(() => {});
+                            }
+                        });
+
+                        tr.appendChild(tdChar);
+                        tr.appendChild(tdLiteral);
+                        tr.appendChild(tdName);
+                        tr.appendChild(tdCmds);
+                        tr.appendChild(tdPts);
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    glyphPreview.appendChild(table);
+                })
+                .catch(() => {
+                    glyphPreview.textContent = 'Ошибка загрузки глифов';
+                });
+        };
+
+        fontInput.addEventListener('change', () => {
+            layer.fontFile = fontInput.value || undefined;
+            if (layer.type === 'glyphPattern' || layer.type === 'textLike') {
+                renderGlyphPreview(layer.fontFile);
+            } else {
+                glyphPreview.textContent = '—';
+            }
+        });
+
+        textInput.addEventListener('input', () => {
+            layer.text = textInput.value || undefined;
+        });
+
+        paramsContainer.oninput = () => {
+            const normalized = normalizeBackgroundParams(
+                layer.type,
+                readParams(paramsContainer, backgroundParamSchema[layer.type] || {}),
+            );
+            layer.params = normalized;
+        };
+
+        const colorRow = document.createElement('div');
+        colorRow.className = 'grid grid-3';
+        const colorSelect = document.createElement('select');
+        const colorParams = document.createElement('div');
+        colorParams.className = 'params';
+        const colorLabel = document.createElement('label');
+        colorLabel.textContent = 'Fill';
+        colorLabel.appendChild(colorSelect);
+        colorRow.appendChild(colorLabel);
+        colorRow.appendChild(colorParams);
+        container.appendChild(colorRow);
+
+        const strokeRow = document.createElement('div');
+        strokeRow.className = 'grid grid-3';
+        const strokeSelect = document.createElement('select');
+        const strokeParams = document.createElement('div');
+        strokeParams.className = 'params';
+        const strokeLabel = document.createElement('label');
+        strokeLabel.textContent = 'Stroke';
+        strokeLabel.appendChild(strokeSelect);
+        strokeRow.appendChild(strokeLabel);
+        strokeRow.appendChild(strokeParams);
+        container.appendChild(strokeRow);
+
+        const pathRow = document.createElement('div');
+        pathRow.className = 'grid grid-3';
+        const pathSelect = document.createElement('select');
+        const pathParams = document.createElement('div');
+        pathParams.className = 'params';
+        const pathLabel = document.createElement('label');
+        pathLabel.textContent = 'PathMorph';
+        pathLabel.appendChild(pathSelect);
+        pathRow.appendChild(pathLabel);
+        pathRow.appendChild(pathParams);
+        container.appendChild(pathRow);
+
+        const transformRow = document.createElement('div');
+        transformRow.className = 'grid grid-3';
+        const transformSelect = document.createElement('select');
+        const transformParams = document.createElement('div');
+        transformParams.className = 'params';
+        const transformLabel = document.createElement('label');
+        transformLabel.textContent = 'Transform';
+        transformLabel.appendChild(transformSelect);
+        transformRow.appendChild(transformLabel);
+        transformRow.appendChild(transformParams);
+        container.appendChild(transformRow);
+
+        const letterRow = document.createElement('div');
+        letterRow.className = 'grid grid-3';
+        const letterSelect = document.createElement('select');
+        const letterParams = document.createElement('div');
+        letterParams.className = 'params';
+        const letterLabel = document.createElement('label');
+        letterLabel.textContent = 'Letter';
+        letterLabel.appendChild(letterSelect);
+        letterRow.appendChild(letterLabel);
+        letterRow.appendChild(letterParams);
+        container.appendChild(letterRow);
+
+        function syncLayer() {
+            const type = typeSelect.value || 'solid';
+            layer.type = type;
+            layer.params = normalizeBackgroundParams(type, readParams(paramsContainer, backgroundParamSchema[type] || {}));
+            if (layer.type === 'glyphPattern' || layer.type === 'textLike') {
+                layer.fontFile = fontInput.value || undefined;
+                layer.text = textInput.value || undefined;
+            } else {
+                delete layer.fontFile;
+                delete layer.text;
+            }
+            const transform = buildAnimationDescriptor(transformSelect.value, transformSchema, transformParams);
+            layer.transformAnimations = transform ? [transform] : [];
+
+            const letterDesc = buildAnimationDescriptor(letterSelect.value, letterSchema, letterParams);
+            layer.letterAnimations = letterDesc ? [letterDesc] : [];
+
+            const fillDesc = buildColorDescriptor(colorSelect.value, colorParams, {
+                fallbackBaseColor: getBaseColorFromDescriptor(layer.colorAnimations && layer.colorAnimations[0]) || [0.1, 0.1, 0.1],
+                isStatic: colorSelect.value === 'none',
+            });
+            layer.colorAnimations = fillDesc ? [fillDesc] : [];
+
+            const strokeDesc = buildColorDescriptor(strokeSelect.value, strokeParams, {
+                isStroke: true,
+                fallbackBaseColor: getBaseColorFromDescriptor(layer.strokeAnimations && layer.strokeAnimations[0]) || [1, 1, 1],
+                fallbackStrokeWidth: getStrokeWidthFromDescriptor(layer.strokeAnimations && layer.strokeAnimations[0]) || 2,
+                isStatic: strokeSelect.value === 'none',
+            });
+            layer.strokeAnimations = strokeDesc ? [strokeDesc] : [];
+
+            const pathDesc = buildAnimationDescriptor(pathSelect.value, pathMorphSchema, pathParams);
+            layer.pathMorphAnimations = pathDesc ? [pathDesc] : [];
+        }
+
+        function renderAll() {
+            renderParams(
+                paramsContainer,
+                backgroundParamSchema[typeSelect.value] || {},
+                layer.params,
+                getBackgroundParamMeta(typeSelect.value),
+            );
+            fillSelect(transformSelect, [
+                { value: 'none', label: 'None' },
+                { value: 'slideLoop', label: 'SlideLoop' },
+                { value: 'scalePulse', label: 'ScalePulse' },
+                { value: 'shakeLoop', label: 'ShakeLoop' },
+                { value: 'bounce', label: 'Bounce' },
+                { value: 'vibrate', label: 'Vibrate' },
+            ]);
+            const transform = (layer.transformAnimations && layer.transformAnimations[0]) || null;
+            transformSelect.value = (transform && transform.type) || 'none';
+            renderParams(
+                transformParams,
+                transformSchema[transformSelect.value] || {},
+                transform && transform.params,
+                transformParamMeta[transformSelect.value] || null,
+                getTransformDefaults(transformSelect.value),
+            );
+
+            fillSelect(letterSelect, [
+                { value: 'none', label: 'None' },
+                { value: 'vibrate', label: 'Vibrate' },
+                { value: 'typingFall', label: 'TypingFall' },
+                { value: 'wave', label: 'Wave' },
+                { value: 'zigzag', label: 'ZigZag' },
+                { value: 'rotate', label: 'Rotate' },
+            ]);
+            const letter = (layer.letterAnimations && layer.letterAnimations[0]) || null;
+            letterSelect.value = (letter && letter.type) || 'none';
+            renderParams(
+                letterParams,
+                letterSchema[letterSelect.value] || {},
+                letter && letter.params,
+                letterParamMeta[letterSelect.value] || null,
+                getLetterDefaults(letterSelect.value),
+            );
+
+            fillSelect(colorSelect, [
+                { value: '', label: '—' },
+                { value: 'none', label: 'None' },
+                { value: 'cycleRGB', label: 'CycleRGB' },
+                { value: 'rainbow', label: 'Rainbow' },
+            ]);
+            const color = (layer.colorAnimations && layer.colorAnimations[0]) || null;
+            colorSelect.value = (color && color.type) || '';
+            renderColorParams(
+                colorParams,
+                colorSelect.value,
+                normalizeColorParamsForUi(color, getBaseColorFromDescriptor(color) || [0.1, 0.1, 0.1], {
+                    isStatic: colorSelect.value === 'none',
+                }),
+            );
+
+            fillSelect(strokeSelect, [
+                { value: '', label: '—' },
+                { value: 'none', label: 'None' },
+                { value: 'cycleRGB', label: 'CycleRGB' },
+                { value: 'rainbow', label: 'Rainbow' },
+            ]);
+            const stroke = (layer.strokeAnimations && layer.strokeAnimations[0]) || null;
+            strokeSelect.value = (stroke && stroke.type) || '';
+            renderColorParams(
+                strokeParams,
+                strokeSelect.value,
+                normalizeColorParamsForUi(stroke, getBaseColorFromDescriptor(stroke) || [1, 1, 1], {
+                    isStroke: true,
+                    fallbackStrokeWidth: getStrokeWidthFromDescriptor(stroke) || 2,
+                    isStatic: strokeSelect.value === 'none',
+                }),
+                { isStroke: true },
+            );
+
+            fillSelect(pathSelect, [
+                { value: 'none', label: 'None' },
+                { value: 'warp', label: 'Warp' },
+                { value: 'warpAiry', label: 'WarpAiry' },
+                { value: 'skewPulse', label: 'SkewPulse' },
+                { value: 'skewSwing', label: 'SkewSwing' },
+            ]);
+            const pathMorph = (layer.pathMorphAnimations && layer.pathMorphAnimations[0]) || null;
+            pathSelect.value = (pathMorph && pathMorph.type) || 'none';
+            renderParams(
+                pathParams,
+                pathMorphSchema[pathSelect.value] || {},
+                pathMorph && pathMorph.params,
+                pathMorphParamMeta[pathSelect.value] || null,
+                getPathMorphDefaults(pathSelect.value),
+            );
+            fontInput.disabled = layer.type !== 'glyphPattern' && layer.type !== 'textLike';
+            textInput.disabled = fontInput.disabled;
+        }
+
+        typeSelect.addEventListener('change', () => {
+            const newType = typeSelect.value || 'solid';
+            const preset = makeDefaultBackgroundLayer(newType);
+            state.backgroundLayers[idx] = { ...preset };
+            state.activeBackgroundIndex = idx;
+            renderBackgroundLayers();
+            renderBackgroundEditor();
+        });
+
+        [fontInput, textInput].forEach((inp) => {
+            inp.addEventListener('input', () => {
+                syncLayer();
+            });
+        });
+        const attachParamSync = (el, fn) => {
+            if (el) {
+                el.oninput = fn;
+                el.onchange = fn;
+            }
+        };
+
+        transformSelect.onchange = () => {
+            renderParams(
+                transformParams,
+                transformSchema[transformSelect.value] || {},
+                {},
+                transformParamMeta[transformSelect.value] || null,
+                getTransformDefaults(transformSelect.value),
+            );
+            syncLayer();
+        };
+        colorSelect.onchange = () => {
+            renderColorParams(
+                colorParams,
+                colorSelect.value,
+                getColorDefaults(colorSelect.value) || defaultFillColorParams(),
+                {},
+            );
+            syncLayer();
+        };
+        strokeSelect.onchange = () => {
+            const defaults = getColorDefaults(strokeSelect.value) || defaultStrokeColorParams();
+            if (typeof defaults.strokeWidth !== 'number') defaults.strokeWidth = 2;
+            renderColorParams(strokeParams, strokeSelect.value, defaults, { isStroke: true });
+            syncLayer();
+        };
+        pathSelect.onchange = () => {
+            renderParams(
+                pathParams,
+                pathMorphSchema[pathSelect.value] || {},
+                {},
+                pathMorphParamMeta[pathSelect.value] || null,
+                getPathMorphDefaults(pathSelect.value),
+            );
+            syncLayer();
+        };
+        letterSelect.onchange = () => {
+            renderParams(
+                letterParams,
+                letterSchema[letterSelect.value] || {},
+                {},
+                letterParamMeta[letterSelect.value] || null,
+                getLetterDefaults(letterSelect.value),
+            );
+            syncLayer();
+        };
+
+        [transformParams, colorParams, strokeParams, pathParams, letterParams].forEach((el) =>
+            attachParamSync(el, syncLayer),
+        );
+
+        transformParams.addEventListener('change', syncLayer);
+        colorParams.addEventListener('change', syncLayer);
+        strokeParams.addEventListener('change', syncLayer);
+        pathParams.addEventListener('change', syncLayer);
+        paramsContainer.addEventListener('change', syncLayer);
+
+        renderAll();
+        syncLayer();
+        if (layer.type === 'glyphPattern' || layer.type === 'textLike') {
+            renderGlyphPreview(layer.fontFile);
+        } else {
+            glyphPreview.textContent = '—';
+        }
+    }
+
+    function updateFontFilePreview() {
+        const fontSelect = $('fontFile');
+        const sample = $('fontFilePreviewSample');
+        const textInput = $('previewText');
+        if (!fontSelect || !sample) return;
+        const fontFile = fontSelect.value || (state.meta && state.meta.defaults && state.meta.defaults.fontFile) || '';
+        ensureFontPreviewFace(fontFile);
+        const text = (textInput && textInput.value) || 'Abc АБВ 123 ✦☆';
+        sample.textContent = text;
+        sample.style.fontFamily = 'fontPreviewFace';
+    }
+
+    function renderKnockoutControls() {
+        const modeSelect = $('knockoutMode');
+        const paddingInput = $('knockoutPadding');
+        const cornerInput = $('knockoutCornerRadius');
+        const scaleInput = $('knockoutScale');
+        const rotationInput = $('knockoutRotation');
+        const opacityInput = $('knockoutOpacity');
+        const offsetXInput = $('knockoutOffsetX');
+        const offsetYInput = $('knockoutOffsetY');
+        const transformSelect = $('knockoutTransformType');
+        const transformParams = $('knockoutTransformParams');
+        const fillSelectEl = $('knockoutFillType');
+        const fillParams = $('knockoutFillParams');
+        const strokeSelectEl = $('knockoutStrokeType');
+        const strokeParams = $('knockoutStrokeParams');
+        const pathSelectEl = $('knockoutPathMorphType');
+        const pathParams = $('knockoutPathMorphParams');
+
+        if (!state.knockout) state.knockout = makeDefaultKnockout();
+
+        const isKnockoutMode = state.backgroundMode === 'knockout';
+        if (modeSelect) modeSelect.disabled = !isKnockoutMode;
+        [paddingInput, cornerInput, scaleInput, rotationInput, opacityInput, offsetXInput, offsetYInput].forEach((el) => {
+            if (el) el.disabled = !isKnockoutMode;
+        });
+        [transformSelect, fillSelectEl, strokeSelectEl, pathSelectEl].forEach((el) => {
+            if (el) el.disabled = !isKnockoutMode;
+        });
+
+        const knockoutModes =
+            (state.meta &&
+                state.meta.defaults &&
+                Array.isArray(state.meta.defaults.knockoutModes) &&
+                state.meta.defaults.knockoutModes) ||
+            [
+                { value: 'fill', label: 'fill' },
+                { value: 'stroke', label: 'stroke' },
+            ];
+        fillSelect(modeSelect, knockoutModes);
+        modeSelect.value = state.knockout.mode || 'fill';
+
+        paddingInput.value =
+            typeof state.knockout.paddingFactor === 'number' ? state.knockout.paddingFactor : 0.05;
+        cornerInput.value =
+            typeof state.knockout.cornerRadiusFactor === 'number'
+                ? state.knockout.cornerRadiusFactor
+                : 0;
+        scaleInput.value =
+            typeof state.knockout.scale === 'number' ? state.knockout.scale : 1;
+        rotationInput.value =
+            typeof state.knockout.rotationDeg === 'number' ? state.knockout.rotationDeg : 0;
+        opacityInput.value =
+            typeof state.knockout.opacity === 'number' ? state.knockout.opacity : 1;
+        offsetXInput.value =
+            typeof state.knockout.offsetX === 'number' ? state.knockout.offsetX : 0;
+        offsetYInput.value =
+            typeof state.knockout.offsetY === 'number' ? state.knockout.offsetY : 0;
+
+        const updateBasic = () => {
+            if (!state.knockout) state.knockout = makeDefaultKnockout();
+            state.knockout.mode = modeSelect.value || 'fill';
+            state.knockout.paddingFactor = parseFloat(paddingInput.value) || 0;
+            state.knockout.cornerRadiusFactor = parseFloat(cornerInput.value) || 0;
+            state.knockout.scale = parseFloat(scaleInput.value) || 0;
+            state.knockout.rotationDeg = parseFloat(rotationInput.value) || 0;
+            state.knockout.opacity = parseFloat(opacityInput.value);
+            state.knockout.offsetX = parseFloat(offsetXInput.value) || 0;
+            state.knockout.offsetY = parseFloat(offsetYInput.value) || 0;
+        };
+        [modeSelect, paddingInput, cornerInput, scaleInput, rotationInput, opacityInput, offsetXInput, offsetYInput].forEach((el) => {
+            if (el) {
+                el.oninput = updateBasic;
+                el.onchange = updateBasic;
+            }
+        });
+
+        fillSelect(transformSelect, [
+            { value: 'none', label: 'None' },
+            { value: 'slideLoop', label: 'SlideLoop' },
+            { value: 'scalePulse', label: 'ScalePulse' },
+            { value: 'shakeLoop', label: 'ShakeLoop' },
+            { value: 'bounce', label: 'Bounce' },
+            { value: 'vibrate', label: 'Vibrate' },
+        ]);
+        const koTransform = (state.knockout.transformAnimations && state.knockout.transformAnimations[0]) || null;
+        transformSelect.value = (koTransform && koTransform.type) || 'none';
+        renderParams(
+            transformParams,
+            transformSchema[transformSelect.value] || {},
+            koTransform && koTransform.params,
+            transformParamMeta[transformSelect.value] || null,
+            getTransformDefaults(transformSelect.value),
+        );
+
+        fillSelect(fillSelectEl, [
+            { value: '', label: '—' },
+            { value: 'none', label: 'None' },
+            { value: 'cycleRGB', label: 'CycleRGB' },
+            { value: 'rainbow', label: 'Rainbow' },
+        ]);
+        const fillDesc = (state.knockout.colorAnimations && state.knockout.colorAnimations[0]) || null;
+        fillSelectEl.value = (fillDesc && fillDesc.type) || '';
+        renderColorParams(
+            fillParams,
+            fillSelectEl.value,
+            normalizeColorParamsForUi(fillDesc, getBaseColorFromDescriptor(fillDesc) || [0, 0, 0], {
+                isStatic: fillSelectEl.value === 'none',
+            }),
+        );
+
+        fillSelect(strokeSelectEl, [
+            { value: '', label: '—' },
+            { value: 'none', label: 'None' },
+            { value: 'cycleRGB', label: 'CycleRGB' },
+            { value: 'rainbow', label: 'Rainbow' },
+        ]);
+        const strokeDesc = (state.knockout.strokeAnimations && state.knockout.strokeAnimations[0]) || null;
+        strokeSelectEl.value = (strokeDesc && strokeDesc.type) || '';
+        renderColorParams(
+            strokeParams,
+            strokeSelectEl.value,
+            normalizeColorParamsForUi(
+                strokeDesc,
+                getBaseColorFromDescriptor(strokeDesc) || [1, 1, 1],
+                {
+                    isStroke: true,
+                    fallbackStrokeWidth: getStrokeWidthFromDescriptor(strokeDesc) || 2,
+                    isStatic: strokeSelectEl.value === 'none',
+                },
+            ),
+            { isStroke: true },
+        );
+
+        fillSelect(pathSelectEl, [
+            { value: 'none', label: 'None' },
+            { value: 'warp', label: 'Warp' },
+            { value: 'warpAiry', label: 'WarpAiry' },
+            { value: 'skewPulse', label: 'SkewPulse' },
+            { value: 'skewSwing', label: 'SkewSwing' },
+        ]);
+        const pathDesc = (state.knockout.pathMorphAnimations && state.knockout.pathMorphAnimations[0]) || null;
+        pathSelectEl.value = (pathDesc && pathDesc.type) || 'none';
+        renderParams(
+            pathParams,
+            pathMorphSchema[pathSelectEl.value] || {},
+            pathDesc && pathDesc.params,
+            pathMorphParamMeta[pathSelectEl.value] || null,
+            getPathMorphDefaults(pathSelectEl.value),
+        );
+
+        const sync = () => {
+            if (!isKnockoutMode) {
+                return;
+            }
+            const ko = state.knockout || makeDefaultKnockout();
+            ko.mode = modeSelect.value || 'fill';
+            ko.paddingFactor = clampNumber(parseFloat(paddingInput.value), 0, 0.5);
+            ko.cornerRadiusFactor = clampNumber(parseFloat(cornerInput.value), 0, 1);
+            ko.scale = clampNumber(parseFloat(scaleInput.value), 0, 5);
+            ko.rotationDeg = clampNumber(parseFloat(rotationInput.value), -360, 360);
+            ko.opacity = clampNumber(parseFloat(opacityInput.value), 0, 1);
+            const tr = buildAnimationDescriptor(transformSelect.value, transformSchema, transformParams);
+            ko.transformAnimations = tr ? [tr] : [];
+            const fill = buildColorDescriptor(fillSelectEl.value, fillParams, {
+                isStatic: fillSelectEl.value === 'none',
+            });
+            ko.colorAnimations = fill ? [fill] : [];
+            const stroke = buildColorDescriptor(strokeSelectEl.value, strokeParams, {
+                isStroke: true,
+                fallbackStrokeWidth: getStrokeWidthFromDescriptor(strokeDesc) || 2,
+                isStatic: strokeSelectEl.value === 'none',
+            });
+            ko.strokeAnimations = stroke ? [stroke] : [];
+            const path = buildAnimationDescriptor(pathSelectEl.value, pathMorphSchema, pathParams);
+            ko.pathMorphAnimations = path ? [path] : [];
+            state.knockout = ko;
+        };
+
+        modeSelect.onchange = sync;
+        paddingInput.oninput = sync;
+        cornerInput.oninput = sync;
+        scaleInput.oninput = sync;
+        rotationInput.oninput = sync;
+        opacityInput.oninput = sync;
+        transformSelect.onchange = () => {
+            renderParams(
+                transformParams,
+                transformSchema[transformSelect.value] || {},
+                {},
+                transformParamMeta[transformSelect.value] || null,
+                getTransformDefaults(transformSelect.value),
+            );
+            sync();
+        };
+        fillSelectEl.onchange = () => {
+            renderColorParams(
+                fillParams,
+                fillSelectEl.value,
+                getColorDefaults(fillSelectEl.value) || defaultFillColorParams(),
+            );
+            sync();
+        };
+        strokeSelectEl.onchange = () => {
+            const defaults = getColorDefaults(strokeSelectEl.value) || defaultStrokeColorParams();
+            if (typeof defaults.strokeWidth !== 'number') defaults.strokeWidth = 2;
+            renderColorParams(strokeParams, strokeSelectEl.value, defaults, { isStroke: true });
+            sync();
+        };
+        pathSelectEl.onchange = () => {
+            renderParams(
+                pathParams,
+                pathMorphSchema[pathSelectEl.value] || {},
+                {},
+                pathMorphParamMeta[pathSelectEl.value] || null,
+                getPathMorphDefaults(pathSelectEl.value),
+            );
+            sync();
+        };
+        transformParams.onchange = sync;
+        fillParams.onchange = sync;
+        strokeParams.onchange = sync;
+        pathParams.onchange = sync;
+
+        sync();
+    }
+
+    function setBackgroundMode(mode) {
+        state.backgroundMode = mode === 'knockout' ? 'knockout' : 'layers';
+        if (state.backgroundMode === 'knockout') {
+            state.backgroundLayers = [];
+            state.activeBackgroundIndex = null;
+            resetTextAnimationsForKnockout();
+        } else {
+            // keep knockout object but ignore it in serialization
+        }
+        renderBackgroundLayers();
+        renderKnockoutControls();
+        updateBackgroundVisibility();
+    }
+
+    function resetTextAnimationsForKnockout() {
+        const setValue = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.value = value;
+        };
+        setValue('transformType', 'none');
+        setValue('colorType', '');
+        setValue('strokeType', '');
+        setValue('letterType', 'none');
+        setValue('pathMorphType', 'none');
+        renderParams(
+            $('transformParams'),
+            transformSchema['none'] || {},
+            {},
+            transformParamMeta['none'] || null,
+            getTransformDefaults('none'),
+        );
+        renderColorParams($('colorParams'), '', {});
+        renderColorParams($('strokeParams'), '', {}, { isStroke: true });
+        renderParams(
+            $('letterParams'),
+            letterSchema['none'] || {},
+            {},
+            letterParamMeta['none'] || null,
+            getLetterDefaults('none'),
+        );
+        renderParams(
+            $('pathMorphParams'),
+            pathMorphSchema['none'] || {},
+            {},
+            pathMorphParamMeta['none'] || null,
+            getPathMorphDefaults('none'),
+        );
+        updateLetterWarning();
+        updatePathWarning();
+    }
+
+    function updateBackgroundVisibility() {
+        const layersSection = document.getElementById('backgroundLayersSection');
+        const knockoutSection = document.getElementById('knockoutSection');
+        const textAnimationsSection = document.getElementById('textAnimationsSection');
+        const bgModeSection = document.getElementById('backgroundModeSection');
+        if (layersSection) {
+            layersSection.style.display = state.backgroundMode === 'layers' ? '' : 'none';
+        }
+        if (knockoutSection) {
+            knockoutSection.style.display = state.backgroundMode === 'knockout' ? '' : 'none';
+        }
+        if (textAnimationsSection) {
+            textAnimationsSection.style.display = state.backgroundMode === 'knockout' ? 'none' : '';
+        }
+        if (bgModeSection) {
+            bgModeSection.style.display = '';
+        }
+        updateTextAnimationsAvailability();
+    }
+
+    function updateTextAnimationsAvailability() {
+        const disabled = state.backgroundMode === 'knockout';
+        const idsToToggle = [
+            'transformType',
+            'colorType',
+            'strokeType',
+            'letterType',
+            'pathMorphType',
+        ];
+        idsToToggle.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.disabled = disabled;
+        });
+        const paramContainers = [
+            'transformParams',
+            'colorParams',
+            'strokeParams',
+            'letterParams',
+            'pathMorphParams',
+        ];
+        paramContainers.forEach((id) => {
+            const container = document.getElementById(id);
+            if (!container) return;
+            const inputs = container.querySelectorAll('input, select, textarea, button');
+            inputs.forEach((el) => {
+                el.disabled = disabled;
+            });
+            container.style.opacity = disabled ? '0.5' : '';
+        });
+    }
     function fillSelect(select, options) {
         select.innerHTML = '';
         options.forEach((opt) => {
@@ -1214,6 +2331,50 @@
         if (pathMorphs.length) cfg.pathMorphAnimations = pathMorphs;
         else delete cfg.pathMorphAnimations;
 
+        if (state.backgroundMode === 'layers' && Array.isArray(state.backgroundLayers) && state.backgroundLayers.length) {
+            const serialized = state.backgroundLayers
+                .map((layer) => {
+                    if (!layer || !layer.type) return null;
+                    const desc = deepCopy(layer);
+                    desc.params = normalizeBackgroundParams(desc.type, desc.params || {});
+                    if (!desc.colorAnimations || !desc.colorAnimations.length) delete desc.colorAnimations;
+                    if (!desc.strokeAnimations || !desc.strokeAnimations.length) delete desc.strokeAnimations;
+                    if (!desc.transformAnimations || !desc.transformAnimations.length)
+                        delete desc.transformAnimations;
+                    if (!desc.pathMorphAnimations || !desc.pathMorphAnimations.length)
+                        delete desc.pathMorphAnimations;
+                    if (!desc.letterAnimations || !desc.letterAnimations.length)
+                        delete desc.letterAnimations;
+                    if (!desc.fontFile) delete desc.fontFile;
+                    if (!desc.text) delete desc.text;
+                    return desc;
+                })
+                .filter(Boolean);
+            if (serialized.length) cfg.backgroundLayers = serialized;
+            else delete cfg.backgroundLayers;
+        } else {
+            delete cfg.backgroundLayers;
+        }
+
+        if (state.backgroundMode === 'knockout' && state.knockout) {
+            const ko = deepCopy(state.knockout);
+            if (!ko.colorAnimations || !ko.colorAnimations.length) delete ko.colorAnimations;
+            if (!ko.strokeAnimations || !ko.strokeAnimations.length) delete ko.strokeAnimations;
+            if (!ko.transformAnimations || !ko.transformAnimations.length) delete ko.transformAnimations;
+            if (!ko.pathMorphAnimations || !ko.pathMorphAnimations.length) delete ko.pathMorphAnimations;
+            cfg.knockoutBackground = ko;
+        } else {
+            delete cfg.knockoutBackground;
+        }
+
+        if (state.backgroundMode === 'knockout') {
+            delete cfg.transformAnimations;
+            delete cfg.colorAnimations;
+            delete cfg.strokeAnimations;
+            delete cfg.letterAnimations;
+            delete cfg.pathMorphAnimations;
+        }
+
         return cfg;
     }
 
@@ -1230,6 +2391,17 @@
             $('fontFile').value = cfg.fontFile;
         }
         $('enabled').checked = !!wrapper.enabled;
+
+        state.backgroundMode = cfg.knockoutBackground ? 'knockout' : 'layers';
+        const bgModeLayersRadio = document.getElementById('bgModeLayers');
+        const bgModeKnockoutRadio = document.getElementById('bgModeKnockout');
+        if (bgModeLayersRadio) bgModeLayersRadio.checked = state.backgroundMode === 'layers';
+        if (bgModeKnockoutRadio) bgModeKnockoutRadio.checked = state.backgroundMode === 'knockout';
+
+        state.backgroundLayers = state.backgroundMode === 'knockout' ? [] : deepCopy(cfg.backgroundLayers || []);
+        state.activeBackgroundIndex = state.backgroundLayers.length ? 0 : null;
+        state.knockout = cfg.knockoutBackground ? deepCopy(cfg.knockoutBackground) : makeDefaultKnockout();
+        updateBackgroundVisibility();
 
         const transform = (cfg.transformAnimations && cfg.transformAnimations[0]) || null;
         const color = (cfg.colorAnimations && cfg.colorAnimations[0]) || null;
@@ -1288,6 +2460,8 @@
         );
         updateLetterWarning();
         updatePathWarning();
+        renderBackgroundLayers();
+        renderKnockoutControls();
     }
 
     async function refreshVariants() {
@@ -1495,6 +2669,18 @@
             );
             updateLetterWarning();
             updatePathWarning();
+            state.backgroundLayers = [];
+            state.activeBackgroundIndex = null;
+            state.knockout = makeDefaultKnockout();
+            state.knockoutEnabled = false;
+            state.backgroundMode = 'layers';
+            const bgModeLayersRadio = document.getElementById('bgModeLayers');
+            const bgModeKnockoutRadio = document.getElementById('bgModeKnockout');
+            if (bgModeLayersRadio) bgModeLayersRadio.checked = true;
+            if (bgModeKnockoutRadio) bgModeKnockoutRadio.checked = false;
+            renderBackgroundLayers();
+            renderKnockoutControls();
+            updateBackgroundVisibility();
             renderVariants();
             setStatus('Новый вариант');
         });
@@ -1508,6 +2694,14 @@
         durationInput.addEventListener('input', () => {
             setDurationValue(parseInt(durationInput.value || '0', 10) || 0);
         });
+        const fontSelectEl = $('fontFile');
+        if (fontSelectEl) {
+            fontSelectEl.addEventListener('change', updateFontFilePreview);
+        }
+        const previewTextInput = $('previewText');
+        if (previewTextInput) {
+            previewTextInput.addEventListener('input', updateFontFilePreview);
+        }
 
         $('refreshBtn').addEventListener('click', refreshVariants);
         $('saveBtn').addEventListener('click', saveCurrentVariant);
@@ -1565,6 +2759,28 @@
                 getPathMorphDefaults(type),
             );
             updatePathWarning();
+        });
+        const bgModeLayersRadio = document.getElementById('bgModeLayers');
+        const bgModeKnockoutRadio = document.getElementById('bgModeKnockout');
+        if (bgModeLayersRadio) {
+            bgModeLayersRadio.addEventListener('change', () => {
+                if (bgModeLayersRadio.checked) setBackgroundMode('layers');
+            });
+        }
+        if (bgModeKnockoutRadio) {
+            bgModeKnockoutRadio.addEventListener('change', () => {
+                if (bgModeKnockoutRadio.checked) setBackgroundMode('knockout');
+            });
+        }
+        $('addBackgroundLayerBtn').addEventListener('click', () => {
+            if (state.backgroundMode !== 'layers') return;
+            const options = getBackgroundTypeOptions();
+            const firstType = (options[0] && options[0].value) || 'solid';
+            const layer = makeDefaultBackgroundLayer(firstType);
+            state.backgroundLayers = Array.isArray(state.backgroundLayers) ? state.backgroundLayers : [];
+            state.backgroundLayers.push(layer);
+            state.activeBackgroundIndex = state.backgroundLayers.length - 1;
+            renderBackgroundLayers();
         });
 
         fillSelect($('transformType'), [
@@ -1634,6 +2850,10 @@
         updatePathWarning();
         updateDurationRange();
         setDurationValue(parseInt(durationInput.value || '0', 10) || 0);
+        renderBackgroundLayers();
+        renderKnockoutControls();
+        updateBackgroundVisibility();
+        updateTextAnimationsAvailability();
         try {
             const meta = await api('./api/meta');
             state.meta = meta;
@@ -1649,17 +2869,26 @@
                 if (meta.defaults && meta.defaults.fontFile) {
                     fontSelect.value = meta.defaults.fontFile;
                 }
+                updateFontFilePreview();
             }
             if (meta && meta.defaults) {
-                $('width').placeholder = String(meta.defaults.width);
-                $('height').placeholder = String(meta.defaults.height);
-                $('fontSize').placeholder = String(meta.defaults.fontSize);
-                $('frameRate').placeholder = String(meta.defaults.frameRate);
-                $('duration').placeholder = String(meta.defaults.duration);
+                const widthEl = $('width');
+                const heightEl = $('height');
+                const fontSizeEl = $('fontSize');
+                const frameRateEl = $('frameRate');
+                const durationEl = $('duration');
+                if (widthEl) widthEl.placeholder = String(meta.defaults.width);
+                if (heightEl) heightEl.placeholder = String(meta.defaults.height);
+                if (fontSizeEl) fontSizeEl.placeholder = String(meta.defaults.fontSize);
+                if (frameRateEl) frameRateEl.placeholder = String(meta.defaults.frameRate);
+                if (durationEl) durationEl.placeholder = String(meta.defaults.duration);
                 frameRateSelect.value = meta.defaults.frameRate === 30 ? '30' : '60';
                 updateDurationRange();
                 setDurationValue(meta.defaults.duration ?? 0);
             }
+            renderBackgroundLayers();
+            renderKnockoutControls();
+            updateBackgroundVisibility();
         } catch (err) {
             console.error('Failed to load meta', err);
         }
