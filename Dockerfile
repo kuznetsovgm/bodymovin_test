@@ -18,7 +18,7 @@ RUN npm ci
 COPY . .
 
 # Build TypeScript
-RUN npm run build || npx tsc
+RUN npx tsc
 
 # Create necessary directories
 RUN mkdir -p temp stickers public/stickers
