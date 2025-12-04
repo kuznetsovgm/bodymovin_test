@@ -329,7 +329,7 @@ bot.on('inline_query', async (ctx) => {
     const offset = parseInt(ctx.inlineQuery.offset || '0');
     const queryStartTime = Date.now();
 
-    logger.debug(`Inline query: offset=${offset}, query="${query}", user=${ctx.from.id}, username=${ctx.from.username || ''}, first_name=${ctx.from.first_name}`);
+    logger.info(`Inline query: offset=${offset}, query="${query}", user=${ctx.from.id}, username=${ctx.from.username || ''}, first_name=${ctx.from.first_name}`);
 
     const userId = ctx.from.id.toString();
     const queryId = ctx.inlineQuery.id;
@@ -355,7 +355,7 @@ bot.on('inline_query', async (ctx) => {
     }
 
     // Answer immediately with cached results if available from Redis
-    const normalizedText = query.toUpperCase().trim();
+    const normalizedText = query.trim();
 
     // Try to get cached results for all enabled variants in one batch request
     const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
@@ -389,10 +389,12 @@ bot.on('inline_query', async (ctx) => {
                     offset,
                     offset + STICKERS_PER_PAGE_CACHED,
                 );
-                const nextOffset =
-                    offset + STICKERS_PER_PAGE_CACHED < cachedResults.length
-                        ? (offset + STICKERS_PER_PAGE_CACHED).toString()
-                        : '';
+                const returnedCount = paginatedResults.length;
+                const hasMoreCachedOrPending =
+                    offset + returnedCount < enabledCount;
+                const nextOffset = hasMoreCachedOrPending
+                    ? (offset + returnedCount).toString()
+                    : '';
 
                 await ctx.answerInlineQuery(paginatedResults, {
                     // cache_time: 300,
@@ -427,6 +429,7 @@ bot.on('inline_query', async (ctx) => {
             await ctx.answerInlineQuery(results, {
                 // cache_time: 300, // Cache for 5 minutes
                 next_offset: nextOffset,
+                is_personal: true,
             });
 
             inlineQueriesTotal.inc({ status: 'success' });
