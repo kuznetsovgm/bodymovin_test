@@ -6,8 +6,14 @@ const CONFIG_PREFIX = 'config:';
 const CONFIG_ENABLED_SET = 'config:enabled';
 const UPLOAD_CHAT_IDS_KEY = 'config:upload_chat_ids';
 const DEBOUNCE_DELAY_KEY = 'config:debounce_delay';
+const USER_RECENT_STICKERS_LIMIT_KEY = 'config:inline:user_recent_limit';
+const INLINE_HISTORY_ENABLED_KEY = 'config:inline:history_enabled';
+const INLINE_GLOBAL_CONFIG_SCORING_ENABLED_KEY = 'config:inline:global_config_scoring_enabled';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_DEBOUNCE_DELAY = 2000; // 2 seconds default
+const DEFAULT_USER_RECENT_STICKERS_LIMIT = 10;
+const DEFAULT_INLINE_HISTORY_ENABLED = true;
+const DEFAULT_INLINE_GLOBAL_CONFIG_SCORING_ENABLED = false;
 
 /**
  * Sticker configuration manager
@@ -18,9 +24,37 @@ export class StickerConfigManager {
     private uploadChatIdsCacheTime: number = 0;
     private debounceDelayCache: number | null = null;
     private debounceDelayCacheTime: number = 0;
+    private recentLimitCache: number | null = null;
+    private recentLimitCacheTime: number = 0;
+    private inlineHistoryEnabledCache: boolean | null = null;
+    private inlineHistoryEnabledCacheTime: number = 0;
+    private inlineGlobalConfigScoringEnabledCache: boolean | null = null;
+    private inlineGlobalConfigScoringEnabledCacheTime: number = 0;
 
     constructor(redis: Redis) {
         this.redis = redis;
+    }
+
+    private async getBooleanFlag(
+        key: string,
+        defaultValue: boolean,
+        cacheValue: boolean | null,
+        cacheTime: number,
+        setCache: (value: boolean, time: number) => void,
+    ): Promise<boolean> {
+        const now = Date.now();
+        if (cacheValue !== null && now - cacheTime < CACHE_TTL_MS) {
+            return cacheValue;
+        }
+
+        const value = await this.redis.get(key);
+        const parsed = value === null ? defaultValue : value === '1' || value.toLowerCase() === 'true';
+        setCache(parsed, now);
+        return parsed;
+    }
+
+    private async setBooleanFlag(key: string, value: boolean): Promise<void> {
+        await this.redis.set(key, value ? '1' : '0');
     }
 
     private sanitizeConfig(config: Omit<GenerateStickerOptions, 'text'>) {
@@ -400,5 +434,90 @@ export class StickerConfigManager {
     clearDebounceDelayCache(): void {
         this.debounceDelayCache = null;
         this.debounceDelayCacheTime = 0;
+    }
+
+    /**
+     * Get limit for recent stickers per user
+     */
+    async getUserRecentStickersLimit(): Promise<number> {
+        try {
+            const now = Date.now();
+            if (this.recentLimitCache !== null && (now - this.recentLimitCacheTime < CACHE_TTL_MS)) {
+                return this.recentLimitCache;
+            }
+
+            const value = await this.redis.get(USER_RECENT_STICKERS_LIMIT_KEY);
+            const parsed = value ? parseInt(value, 10) : DEFAULT_USER_RECENT_STICKERS_LIMIT;
+            const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_USER_RECENT_STICKERS_LIMIT;
+
+            this.recentLimitCache = limit;
+            this.recentLimitCacheTime = now;
+            return limit;
+        } catch (error) {
+            console.error('Error getting user recent stickers limit:', error);
+            return this.recentLimitCache ?? DEFAULT_USER_RECENT_STICKERS_LIMIT;
+        }
+    }
+
+    /**
+     * Set limit for recent stickers per user
+     */
+    async setUserRecentStickersLimit(limit: number): Promise<void> {
+        if (!Number.isFinite(limit) || limit <= 0) {
+            throw new Error('Invalid recent stickers limit');
+        }
+        await this.redis.set(USER_RECENT_STICKERS_LIMIT_KEY, limit.toString());
+        this.recentLimitCache = limit;
+        this.recentLimitCacheTime = Date.now();
+    }
+
+    /**
+     * Get flag: enable inline history for empty queries
+     */
+    async getInlineHistoryEnabled(): Promise<boolean> {
+        return this.getBooleanFlag(
+            INLINE_HISTORY_ENABLED_KEY,
+            DEFAULT_INLINE_HISTORY_ENABLED,
+            this.inlineHistoryEnabledCache,
+            this.inlineHistoryEnabledCacheTime,
+            (value, time) => {
+                this.inlineHistoryEnabledCache = value;
+                this.inlineHistoryEnabledCacheTime = time;
+            },
+        );
+    }
+
+    /**
+     * Set flag: enable inline history for empty queries
+     */
+    async setInlineHistoryEnabled(enabled: boolean): Promise<void> {
+        await this.setBooleanFlag(INLINE_HISTORY_ENABLED_KEY, enabled);
+        this.inlineHistoryEnabledCache = enabled;
+        this.inlineHistoryEnabledCacheTime = Date.now();
+    }
+
+    /**
+     * Get flag: enable global config scoring
+     */
+    async getInlineGlobalConfigScoringEnabled(): Promise<boolean> {
+        return this.getBooleanFlag(
+            INLINE_GLOBAL_CONFIG_SCORING_ENABLED_KEY,
+            DEFAULT_INLINE_GLOBAL_CONFIG_SCORING_ENABLED,
+            this.inlineGlobalConfigScoringEnabledCache,
+            this.inlineGlobalConfigScoringEnabledCacheTime,
+            (value, time) => {
+                this.inlineGlobalConfigScoringEnabledCache = value;
+                this.inlineGlobalConfigScoringEnabledCacheTime = time;
+            },
+        );
+    }
+
+    /**
+     * Set flag: enable global config scoring
+     */
+    async setInlineGlobalConfigScoringEnabled(enabled: boolean): Promise<void> {
+        await this.setBooleanFlag(INLINE_GLOBAL_CONFIG_SCORING_ENABLED_KEY, enabled);
+        this.inlineGlobalConfigScoringEnabledCache = enabled;
+        this.inlineGlobalConfigScoringEnabledCacheTime = Date.now();
     }
 }

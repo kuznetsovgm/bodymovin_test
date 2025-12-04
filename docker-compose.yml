@@ -18,6 +18,26 @@ services:
     networks:
       - bodymovin-net
 
+  postgres:
+    image: postgres:15-alpine
+    container_name: bodymovin-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${PG_USER:-postgres}
+      - POSTGRES_PASSWORD=${PG_PASSWORD:-postgres}
+      - POSTGRES_DB=${PG_DB:-postgres}
+    ports:
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bodymovin-net
+
   bot:
     build:
       context: .
@@ -27,11 +47,18 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       loki:
         condition: service_started
     environment:
       - REDIS_URL=redis://redis:6379
       - BOT_TOKEN=${BOT_TOKEN}
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=${PG_USER:-postgres}
+      - PG_PASSWORD=${PG_PASSWORD:-postgres}
+      - PG_DB=${PG_DB:-postgres}
       - NODE_ENV=production
       - METRICS_PORT=3099
       - LOKI_HOST=http://loki:3100
@@ -151,6 +178,7 @@ services:
       - bodymovin-net
     depends_on:
       - redis
+      - postgres
 
   config-ui:
     build:
@@ -180,6 +208,8 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
+    driver: local
   redis-data:
     driver: local
   prometheus-data:

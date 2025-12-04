@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Telegraf, Context } from 'telegraf';
 import {
     InlineQueryResult,
@@ -39,6 +40,9 @@ import {
 } from './metrics';
 import { StickerWorkerPool } from './worker/worker-pool';
 import { StickerGenerationTask } from './worker/types';
+import { UserService } from './db/user-service';
+import { createSaveUserMiddleware } from './db/user-middleware';
+import { getDataSource } from './db/data-source';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -46,10 +50,17 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
+const userService = new UserService();
+bot.use(createSaveUserMiddleware(userService));
 
 // Worker pool configuration
 const WORKER_POOL_SIZE = parseInt(process.env.WORKER_POOL_SIZE || '0', 10) || undefined;
 const WORKER_QUEUE_SIZE = parseInt(process.env.WORKER_QUEUE_SIZE || '100', 10);
+
+const STICKER_STATS_HASH_KEY = 'sticker:stats';
+const STICKER_STATS_ZSET_KEY = 'sticker:stats:zset';
+const STICKER_CONFIG_SCORE_ZSET_KEY = 'sticker:config:score';
+const USER_RECENT_KEY_PREFIX = 'user';
 
 // Initialize worker pool
 const workerPool = new StickerWorkerPool(WORKER_POOL_SIZE, WORKER_QUEUE_SIZE);
@@ -331,6 +342,41 @@ bot.on('inline_query', async (ctx) => {
 
     logger.info(`Inline query: offset=${offset}, query="${query}", user=${ctx.from.id}, username=${ctx.from.username || ''}, first_name=${ctx.from.first_name}`);
 
+    const normalizedInlineQuery = query.trim();
+
+    // If query is empty, try to serve personal recent stickers
+    if (normalizedInlineQuery === '') {
+        const historyEnabled = await stickerConfigManager.getInlineHistoryEnabled();
+
+        if (historyEnabled) {
+            try {
+                const limit = await stickerConfigManager.getUserRecentStickersLimit();
+                const redis = stickerCache.getRedis();
+                const userRecentKey = `${USER_RECENT_KEY_PREFIX}:${ctx.from.id}:recent`;
+                const recentFileIds = await redis.lrange(userRecentKey, 0, limit - 1);
+
+                if (recentFileIds.length > 0) {
+                    const results: InlineQueryResult[] = recentFileIds.map((fileId, index) => ({
+                        type: 'sticker',
+                        id: `recent-${index}-${fileId}`,
+                        sticker_file_id: fileId,
+                    } as InlineQueryResultCachedSticker));
+
+                    await ctx.answerInlineQuery(results, {
+                        is_personal: true,
+                        cache_time: 0,
+                        next_offset: '',
+                    });
+                    inlineQueriesTotal.inc({ status: 'history' });
+                    return;
+                }
+            } catch (error) {
+                logError(error as Error, { context: 'inline_history', userId: ctx.from.id });
+                logger.error('Failed to fetch recent stickers history:', error);
+            }
+        }
+    }
+
     const userId = ctx.from.id.toString();
     const queryId = ctx.inlineQuery.id;
     const STICKERS_PER_PAGE_CACHED = 20; // Return 20 stickers per page when cached
@@ -460,6 +506,50 @@ bot.on('inline_query', async (ctx) => {
     }, debounceDelay);
 
     debounceTimers.set(userId, timer);
+});
+
+// Track chosen inline results: stats, history, config scoring
+bot.on('chosen_inline_result', async (ctx) => {
+    const { chosenInlineResult } = ctx;
+    if (!chosenInlineResult) {
+        return;
+    }
+
+    const userId = ctx.from?.id ? ctx.from.id.toString() : null;
+    const configId = chosenInlineResult.result_id;
+    const normalizedText = (chosenInlineResult.query || '').toUpperCase().trim();
+    const redis = stickerCache.getRedis();
+
+    try {
+        let fileId: string | null = null;
+
+        if (configId) {
+            const config = await stickerConfigManager.getConfig(configId);
+            if (config) {
+                fileId = await stickerCache.get(normalizedText, config);
+            }
+        }
+
+        if (fileId) {
+            await redis.hincrby(STICKER_STATS_HASH_KEY, fileId, 1);
+            await redis.zincrby(STICKER_STATS_ZSET_KEY, 1, fileId);
+
+            if (userId) {
+                const recentLimit = await stickerConfigManager.getUserRecentStickersLimit();
+                const userRecentKey = `${USER_RECENT_KEY_PREFIX}:${userId}:recent`;
+                await redis.lpush(userRecentKey, fileId);
+                await redis.ltrim(userRecentKey, 0, recentLimit - 1);
+            }
+        }
+
+        const globalConfigScoringEnabled = await stickerConfigManager.getInlineGlobalConfigScoringEnabled();
+        if (globalConfigScoringEnabled && configId) {
+            await redis.zincrby(STICKER_CONFIG_SCORE_ZSET_KEY, 1, configId);
+        }
+    } catch (error) {
+        logError(error as Error, { context: 'chosen_inline_result', userId, configId });
+        logger.error('Failed to handle chosen_inline_result:', error);
+    }
 });
 
 bot.command('start', async (ctx) => {
@@ -819,6 +909,9 @@ stickerCache.getRedis().on('close', () => {
 (async () => {
     try {
         logger.info('Initializing worker pool...');
+        await getDataSource().catch(err => {
+            logger.error('PostgreSQL connection failed (continuing without DB):', err);
+        });
         await workerPool.initialize();
         logger.info('Worker pool initialized successfully');
 
