@@ -265,7 +265,7 @@ export const pathMorphAnimationConfig: PathMorphAnimationConfig = {
 
 // ---------- Font & layout ----------
 
-export const FRACTION_DIGITS = 2;
+export const FRACTION_DIGITS = 0;
 
 export type FontAnimationConfig = {
     /** Имя файла шрифта (в директории fonts) по умолчанию */
