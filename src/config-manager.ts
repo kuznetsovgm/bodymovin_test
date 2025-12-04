@@ -56,9 +56,11 @@ export class StickerConfigManager {
             // Save config as JSON
             await this.redis.set(key, JSON.stringify(sanitizedConfig));
 
-            // Add to enabled set if enabled
+            // Keep enabled set in sync with desired status
             if (enabled) {
                 await this.redis.sadd(CONFIG_ENABLED_SET, configId);
+            } else {
+                await this.redis.srem(CONFIG_ENABLED_SET, configId);
             }
 
             return configId;
