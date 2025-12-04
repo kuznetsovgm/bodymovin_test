@@ -1,7 +1,7 @@
 import { TransformShape, ShapeType } from '../interfaces/lottie';
 import { ComposeFn, LetterAnimationDescriptor, LetterAnimationType } from '../domain/types';
 import { buildRawKeyframes, buildValueKeyframes, linearIn, linearOut } from '../shared/keyframes';
-import { letterAnimationConfig } from '../config/animation-config';
+import { FRACTION_DIGITS, letterAnimationConfig } from '../config/animation-config';
 
 export type LetterContext = {
     letterIndex: number;
@@ -47,10 +47,10 @@ export function buildLetterTransform(
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 pts.push([
-                    x + (Math.random() - 0.5) * intensity * 2,
-                    y + (Math.random() - 0.5) * intensity * 2,
+                    +(x + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
+                    +(y + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
                 ]);
-                times.push(t);
+                times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
                 ...createBaseTransform(letterIndex, x, y),
@@ -89,7 +89,7 @@ export function buildLetterTransform(
                 const t = (f / steps) * duration;
                 const angle = phase + (2 * Math.PI * t) / duration;
                 pts.push([x, y + Math.sin(angle) * amp]);
-                times.push(t);
+                times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
                 ...createBaseTransform(letterIndex, x, y),
@@ -111,7 +111,7 @@ export function buildLetterTransform(
                 const angle = phase + (2 * Math.PI * t) / duration;
                 const sy = cfg.baseScale + Math.sin(angle) * spread;
                 pts.push([cfg.baseScale, sy]);
-                times.push(t);
+                times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
                 ...createBaseTransform(letterIndex, x, y),

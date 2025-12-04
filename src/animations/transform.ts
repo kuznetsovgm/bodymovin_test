@@ -1,7 +1,7 @@
 import { ShapeLayer } from '../interfaces/lottie';
 import { TransformAnimationDescriptor, TransformAnimationType } from '../domain/types';
 import { buildLoopKeyframes, buildRawKeyframes, buildValueKeyframes } from '../shared/keyframes';
-import { transformAnimationConfig } from '../config/animation-config';
+import { FRACTION_DIGITS, transformAnimationConfig } from '../config/animation-config';
 
 export type TransformContext = {
     width: number;
@@ -101,7 +101,7 @@ export function buildTransformPatch(
                 const t = (f / steps) * duration;
                 const off = (f % 2 === 0 ? intensity : -intensity) * (1 - f / steps);
                 pts.push([width / 2 + off, height / 2, 0]);
-                times.push(t);
+                times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             pts[pts.length - 1] = [width / 2, height / 2, 0];
             return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } };
@@ -140,11 +140,11 @@ export function buildTransformPatch(
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 pts.push([
-                    width / 2 + (Math.random() - 0.5) * intensity * 2,
-                    height / 2 + (Math.random() - 0.5) * intensity * 2,
+                    +(width / 2 + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
+                    +(height / 2 + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
                     0,
                 ]);
-                times.push(t);
+                times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return { p: { a: 1, k: buildRawKeyframes(pts, times, true) } };
         }

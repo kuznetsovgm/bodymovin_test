@@ -1573,7 +1573,7 @@
                         tr.style.cursor = 'pointer';
                         tr.addEventListener('click', () => {
                             if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-                                navigator.clipboard.writeText(copyValue).catch(() => {});
+                                navigator.clipboard.writeText(copyValue).catch(() => { });
                             }
                         });
 

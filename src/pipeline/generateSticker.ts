@@ -60,6 +60,7 @@ import {
 } from '../domain/types';
 import { convertOpentypePathToBezier } from '../shapes/bezier';
 import { buildLetterSeed } from '../shared/noise';
+import { minifySticker } from '../shared/lottieMinifier';
 
 export async function generateSticker(opts: GenerateStickerOptions): Promise<Sticker> {
     const cfg = applyDefaults(opts);
@@ -159,7 +160,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
     });
 
     const sticker = buildStickerShell(text, width, height, frameRate, duration, layers);
-    return sticker;
+    return minifySticker(sticker);
 }
 
 export async function saveStickerToFile(sticker: Sticker, outPath: string) {
@@ -711,8 +712,8 @@ function buildKnockoutBackgroundLayer(
     const baseWidth = Math.max(textWidth, ctx.width);
     const baseHeight = Math.max(textHeight, ctx.height);
 
-    const paddedWidth = baseWidth * (1 + paddingFactor * 2);
-    const paddedHeight = baseHeight * (1 + paddingFactor * 2);
+    const paddedWidth = +(baseWidth * (1 + paddingFactor * 2)).toFixed(3);
+    const paddedHeight = +(baseHeight * (1 + paddingFactor * 2)).toFixed(3);
     const cornerRadius = Math.min(paddedWidth, paddedHeight) * cornerRadiusFactor;
 
     const outerPath: PathShape = {

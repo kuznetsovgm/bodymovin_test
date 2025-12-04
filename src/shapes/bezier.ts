@@ -4,7 +4,7 @@ import { Bezier } from '../interfaces/lottie';
 import { PathMorphAnimationType } from '../domain/types';
 import { linearIn, linearOut } from '../shared/keyframes';
 import { seededNoise } from '../shared/noise';
-import { pathMorphAnimationConfig } from '../config/animation-config';
+import { FRACTION_DIGITS, pathMorphAnimationConfig } from '../config/animation-config';
 
 export function buildPathMorphKeyframes(
     bez: Bezier,
@@ -29,7 +29,8 @@ export function buildPathMorphKeyframes(
         morph === PathMorphAnimationType.SkewSwing
             ? buildSwingStates(bez, intensity)
             : phases.map((ph) => applyMorph(bez, morph, intensity, ph, seed));
-    const states = rawStates.map((state) => quantizeBezier(state));
+    const quantizedStates = rawStates.map((state) => quantizeBezier(state));
+    const states = dedupeBezierSequence(quantizedStates);
 
     const stateCount = states.length;
     const times = Array.from({ length: stateCount + 1 }, (_, idx) => (idx / stateCount) * duration);
@@ -41,7 +42,7 @@ export function buildPathMorphKeyframes(
         kf.push({ t, s: [cur], e: [nxt], i: linearIn(), o: linearOut() });
     }
     kf.push({ t: duration, s: [states[0]] });
-    return kf;
+    return quantizePathMorphKeyframes(kf);
 }
 
 export function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
@@ -63,20 +64,26 @@ export function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
                     outT = [];
                     v = [];
                 }
-                v.push([c.x, c.y]);
+                v.push([+(c.x).toFixed(FRACTION_DIGITS), +(c.y).toFixed(FRACTION_DIGITS)]);
                 inT.push([0, 0]);
                 outT.push([0, 0]);
                 break;
             case 'L':
-                v.push([c.x, c.y]);
+                v.push([+(c.x).toFixed(FRACTION_DIGITS), +(c.y).toFixed(FRACTION_DIGITS)]);
                 inT.push([0, 0]);
                 outT.push([0, 0]);
                 break;
             case 'C': {
                 const last = v[v.length - 1];
-                outT[outT.length - 1] = [c.x1 - last[0], c.y1 - last[1]];
-                v.push([c.x, c.y]);
-                inT.push([c.x2 - c.x, c.y2 - c.y]);
+                outT[outT.length - 1] = [
+                    +(c.x1 - last[0]).toFixed(FRACTION_DIGITS),
+                    +(c.y1 - last[1]).toFixed(FRACTION_DIGITS),
+                ];
+                v.push([+(c.x).toFixed(FRACTION_DIGITS), +(c.y).toFixed(FRACTION_DIGITS)]);
+                inT.push([
+                    +(c.x2 - c.x).toFixed(FRACTION_DIGITS),
+                    +(c.y2 - c.y).toFixed(FRACTION_DIGITS),
+                ]);
                 outT.push([0, 0]);
                 break;
             }
@@ -88,15 +95,21 @@ export function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
                 const y1c = last[1] + (2 / 3) * (qy - last[1]);
                 const x2c = c.x + (2 / 3) * (qx - c.x);
                 const y2c = c.y + (2 / 3) * (qy - c.y);
-                outT[outT.length - 1] = [x1c - last[0], y1c - last[1]];
-                v.push([c.x, c.y]);
-                inT.push([x2c - c.x, y2c - c.y]);
+                outT[outT.length - 1] = [
+                    +(x1c - last[0]).toFixed(FRACTION_DIGITS),
+                    +(y1c - last[1]).toFixed(FRACTION_DIGITS),
+                ];
+                v.push([+(c.x).toFixed(FRACTION_DIGITS), +(c.y).toFixed(FRACTION_DIGITS)]);
+                inT.push([
+                    +(x2c - c.x).toFixed(FRACTION_DIGITS),
+                    +(y2c - c.y).toFixed(FRACTION_DIGITS),
+                ]);
                 outT.push([0, 0]);
                 break;
             }
             case 'Z':
                 if (v.length > 0) {
-                    contours.push({ c: true, i: inT, o: outT, v });
+                    contours.push(quantizeBezier({ c: true, i: inT, o: outT, v }, 2));
                     inT = [];
                     outT = [];
                     v = [];
@@ -295,10 +308,95 @@ function quantizePoint(point: number[], decimals = PATH_MORPH_PRECISION): number
 
 function quantizeBezier(bez: Bezier, decimals = PATH_MORPH_PRECISION): Bezier {
     const quantizeList = (list: number[][]) => list.map((pt) => quantizePoint(pt, decimals));
-    return {
+    const quantized: Bezier = {
         c: bez.c,
         v: quantizeList(bez.v),
         i: quantizeList(bez.i),
         o: quantizeList(bez.o),
     };
+    return dedupeBezier(quantized);
+}
+
+function beziersEqual(a: Bezier | null | undefined, b: Bezier | null | undefined): boolean {
+    if (!a || !b) return false;
+    if (!!a.c !== !!b.c) return false;
+    if (a.v.length !== b.v.length || a.i.length !== b.i.length || a.o.length !== b.o.length) {
+        return false;
+    }
+    for (let idx = 0; idx < a.v.length; idx++) {
+        if (!pointsEqual(a.v[idx], b.v[idx])) return false;
+        if (!pointsEqual(a.i[idx], b.i[idx])) return false;
+        if (!pointsEqual(a.o[idx], b.o[idx])) return false;
+    }
+    return true;
+}
+
+function dedupeBezierSequence(list: Bezier[]): Bezier[] {
+    if (!list.length) return list;
+    const deduped: Bezier[] = [];
+    for (const bez of list) {
+        const last = deduped[deduped.length - 1];
+        if (last && beziersEqual(last, bez)) continue;
+        deduped.push(bez);
+    }
+    return deduped.length ? deduped : list;
+}
+
+function pointsEqual(a: number[] = [], b: number[] = []): boolean {
+    if (a.length !== b.length) return false;
+    for (let idx = 0; idx < a.length; idx++) {
+        if (a[idx] !== b[idx]) return false;
+    }
+    return true;
+}
+
+function dedupeBezier(bez: Bezier): Bezier {
+    if (!bez.v.length) return bez;
+    const next: Bezier = { c: bez.c, v: [], i: [], o: [] } as Bezier;
+    for (let idx = 0; idx < bez.v.length; idx++) {
+        const v = bez.v[idx];
+        const i = bez.i[idx];
+        const o = bez.o[idx];
+        const lastIdx = next.v.length - 1;
+        if (
+            lastIdx >= 0 &&
+            pointsEqual(v, next.v[lastIdx]) &&
+            pointsEqual(i, next.i[lastIdx]) &&
+            pointsEqual(o, next.o[lastIdx])
+        ) {
+            continue;
+        }
+        next.v.push(v);
+        next.i.push(i);
+        next.o.push(o);
+    }
+    return next;
+}
+
+function isBezierShape(value: any): value is Bezier {
+    return (
+        value &&
+        typeof value === 'object' &&
+        Array.isArray((value as any).v) &&
+        Array.isArray((value as any).i) &&
+        Array.isArray((value as any).o)
+    );
+}
+
+function quantizeKeyframeValue(value: any, decimals = PATH_MORPH_PRECISION): any {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'number') return quantizeNumber(value, decimals);
+    if (Array.isArray(value)) return value.map((entry) => quantizeKeyframeValue(entry, decimals));
+    if (isBezierShape(value)) return quantizeBezier(value, decimals);
+    if (typeof value === 'object') {
+        return Object.keys(value).reduce((acc, key) => {
+            acc[key] = quantizeKeyframeValue((value as any)[key], decimals);
+            return acc;
+        }, {} as any);
+    }
+    return value;
+}
+
+function quantizePathMorphKeyframes(keyframes: any[], decimals = PATH_MORPH_PRECISION) {
+    return quantizeKeyframeValue(keyframes, decimals) as any[];
 }
