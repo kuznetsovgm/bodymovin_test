@@ -564,13 +564,21 @@ bot.command('start', async (ctx) => {
         ctx.botInfo.username +
         '` in any chat\n' +
         '2. Enter your text\n' +
-        '3. Wait 2 seconds for generation\n' +
-        `4. Choose from ${enabledCount} different animated styles!\n\n` +
-        '✨ Animations include: Rainbow slide, Scale pulse, Rotate, Bounce, Shake, and more!\n\n' +
+        '3. Wait\ for generation\n' +
+        `4. Choose from different animated styles!\n\n` +
         'Try it now: `@' +
         ctx.botInfo.username +
         ' Hello`',
-        { parse_mode: 'Markdown' },
+        {
+            parse_mode: 'Markdown', reply_markup: {
+                inline_keyboard: [[
+                    {
+                        text: "Try it now!",
+                        "switch_inline_query": "Hello!"
+                    }
+                ]]
+            }
+        },
     );
 });
 
