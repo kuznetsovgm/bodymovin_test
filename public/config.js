@@ -1379,9 +1379,14 @@
             return;
         }
 
+        let dragStartIndex = null;
+
         state.backgroundLayers.forEach((layer, idx) => {
             const item = document.createElement('div');
             item.className = 'variant-item' + (state.activeBackgroundIndex === idx ? ' active' : '');
+            item.draggable = true;
+            item.dataset.index = String(idx);
+
             const title = document.createElement('div');
             title.className = 'variant-title';
             const label = document.createElement('span');
@@ -1400,6 +1405,7 @@
                     state.activeBackgroundIndex = null;
                 } else if ((state.activeBackgroundIndex || 0) > idx) {
                     state.activeBackgroundIndex -= 1;
+                    if (state.activeBackgroundIndex < 0) state.activeBackgroundIndex = null;
                 }
                 renderBackgroundLayers();
             });
@@ -1410,6 +1416,59 @@
                 renderBackgroundLayers();
                 renderBackgroundEditor();
             });
+
+            item.addEventListener('dragstart', (e) => {
+                dragStartIndex = idx;
+                item.classList.add('dragging');
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', String(idx));
+                }
+            });
+
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                dragStartIndex = null;
+            });
+
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (dragStartIndex == null || dragStartIndex === idx) return;
+                item.classList.add('drag-over');
+            });
+
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drag-over');
+            });
+
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                item.classList.remove('drag-over');
+                const from = dragStartIndex;
+                if (from == null || from === idx) return;
+                const to = idx;
+                const layers = state.backgroundLayers;
+                if (!Array.isArray(layers) || from < 0 || from >= layers.length || to < 0 || to >= layers.length) {
+                    return;
+                }
+                const [moved] = layers.splice(from, 1);
+                layers.splice(to, 0, moved);
+
+                if (state.activeBackgroundIndex === from) {
+                    state.activeBackgroundIndex = to;
+                } else if (state.activeBackgroundIndex != null) {
+                    let current = state.activeBackgroundIndex;
+                    if (from < to) {
+                        if (current > from && current <= to) current -= 1;
+                    } else if (from > to) {
+                        if (current >= to && current < from) current += 1;
+                    }
+                    state.activeBackgroundIndex = current;
+                }
+
+                renderBackgroundLayers();
+            });
+
             list.appendChild(item);
         });
         if (state.activeBackgroundIndex == null || state.activeBackgroundIndex >= state.backgroundLayers.length) {
