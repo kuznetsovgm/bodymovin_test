@@ -8,23 +8,10 @@ import { Input } from 'telegraf';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import {
-    TransformAnimationType,
-    ColorAnimationType,
     stickerToBuffer,
-    LetterAnimationType,
-    PathMorphAnimationType,
-    GenerateStickerOptions,
-    blendLayerTransform,
 } from './index';
-import {
-    additiveColor,
-    blendColor,
-    blendTransform,
-    timelineColor,
-} from './animations/composers';
-import { blendLetterTransform } from './animations/letter';
 import { stickerCache } from './cache';
-import { StickerConfigManager } from './config-manager';
+import { StickerConfigManager, STICKER_CONFIG_SCORE_ZSET_KEY } from './config-manager';
 import { logger, logError, logInlineQuery, logStickerGeneration, logUpload } from './logger';
 import {
     register,
@@ -59,7 +46,6 @@ const WORKER_QUEUE_SIZE = parseInt(process.env.WORKER_QUEUE_SIZE || '100', 10);
 
 const STICKER_STATS_HASH_KEY = 'sticker:stats';
 const STICKER_STATS_ZSET_KEY = 'sticker:stats:zset';
-const STICKER_CONFIG_SCORE_ZSET_KEY = 'sticker:config:score';
 const USER_RECENT_KEY_PREFIX = 'user';
 
 // Initialize worker pool

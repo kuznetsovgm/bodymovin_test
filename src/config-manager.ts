@@ -2,6 +2,8 @@ import Redis from 'ioredis';
 import * as crypto from 'crypto';
 import { GenerateStickerOptions } from './index';
 
+export const STICKER_CONFIG_SCORE_ZSET_KEY = 'sticker:config:score';
+
 const CONFIG_PREFIX = 'config:';
 const CONFIG_ENABLED_SET = 'config:enabled';
 const UPLOAD_CHAT_IDS_KEY = 'config:upload_chat_ids';
@@ -150,12 +152,41 @@ export class StickerConfigManager {
     }>> {
         try {
             const enabledIds = await this.redis.smembers(CONFIG_ENABLED_SET);
+            let orderedIds = enabledIds;
+
+            try {
+                const useGlobalScoring = await this.getInlineGlobalConfigScoringEnabled();
+
+                if (useGlobalScoring && enabledIds.length > 0) {
+                    const scoredIds = await this.redis.zrevrange(
+                        STICKER_CONFIG_SCORE_ZSET_KEY,
+                        0,
+                        -1,
+                    );
+                    const enabledSet = new Set(enabledIds);
+                    const scoredEnabledIds = scoredIds.filter((id) =>
+                        enabledSet.has(id),
+                    );
+
+                    if (scoredEnabledIds.length > 0) {
+                        const scoredSet = new Set(scoredEnabledIds);
+                        const remainingIds = enabledIds.filter(
+                            (id) => !scoredSet.has(id),
+                        );
+                        orderedIds = [...scoredEnabledIds, ...remainingIds];
+                    }
+                }
+            } catch (error) {
+                console.error('Error applying global config scoring:', error);
+                // Fallback to unsorted enabledIds on error
+                orderedIds = enabledIds;
+            }
             const results: Array<{
                 id: string;
                 config: Omit<GenerateStickerOptions, 'text'>;
             }> = [];
 
-            for (const configId of enabledIds) {
+            for (const configId of orderedIds) {
                 const config = await this.getConfig(configId);
                 if (config) {
                     results.push({ id: configId, config });
