@@ -554,32 +554,42 @@ bot.on('chosen_inline_result', async (ctx) => {
 
 bot.command('start', async (ctx) => {
     console.log('Received /start command from user:', ctx.from.id);
-    const enabledCount = await stickerConfigManager.getEnabledCount();
+    const userLang = ctx.from?.language_code || 'en';
+    const isRussian = userLang.toLowerCase().startsWith('ru');
+    const username = ctx.botInfo.username;
 
-    ctx.reply(
-        '🎨 *Animated Sticker Bot*\n\n' +
+    const messageText = isRussian
+        ? '🎨 *Бот анимированных стикеров*\n\n' +
+        'Используй меня в инлайн‑режиме, чтобы создавать анимированные текстовые стикеры!\n\n' +
+        '*Как пользоваться:*\n' +
+        '1. Напиши `@' + username + '` в любом чате\n' +
+        '2. Введи свой текст\n' +
+        '3. Подожди генерации\n' +
+        '4. Выбери понравившийся анимированный стиль!\n\n' +
+        'Попробуй сейчас: `@' + username + ' Привет`'
+        : '🎨 *Animated Sticker Bot*\n\n' +
         'Use me in inline mode to create animated text stickers!\n\n' +
         '*How to use:*\n' +
-        '1. Type `@' +
-        ctx.botInfo.username +
-        '` in any chat\n' +
+        '1. Type `@' + username + '` in any chat\n' +
         '2. Enter your text\n' +
-        '3. Wait\ for generation\n' +
-        `4. Choose from different animated styles!\n\n` +
-        'Try it now: `@' +
-        ctx.botInfo.username +
-        ' Hello`',
-        {
-            parse_mode: 'Markdown', reply_markup: {
-                inline_keyboard: [[
-                    {
-                        text: "Try it now!",
-                        "switch_inline_query": "Hello!"
-                    }
-                ]]
-            }
+        '3. Wait for generation\n' +
+        '4. Choose from different animated styles!\n\n' +
+        'Try it now: `@' + username + ' Hello`';
+
+    const buttonText = isRussian ? 'Попробуй сейчас!' : 'Try it now!';
+    const buttonQuery = isRussian ? 'Привет!' : 'Hello!';
+
+    ctx.reply(messageText, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[
+                {
+                    text: buttonText,
+                    switch_inline_query: buttonQuery,
+                },
+            ]],
         },
-    );
+    });
 });
 
 // Admin command: List all sticker configurations
