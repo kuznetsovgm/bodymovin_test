@@ -9,11 +9,13 @@ const CONFIG_ENABLED_SET = 'config:enabled';
 const UPLOAD_CHAT_IDS_KEY = 'config:upload_chat_ids';
 const DEBOUNCE_DELAY_KEY = 'config:debounce_delay';
 const USER_RECENT_STICKERS_LIMIT_KEY = 'config:inline:user_recent_limit';
+const INLINE_QUERY_MAX_LENGTH_KEY = 'config:inline:query_max_length';
 const INLINE_HISTORY_ENABLED_KEY = 'config:inline:history_enabled';
 const INLINE_GLOBAL_CONFIG_SCORING_ENABLED_KEY = 'config:inline:global_config_scoring_enabled';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_DEBOUNCE_DELAY = 2000; // 2 seconds default
 const DEFAULT_USER_RECENT_STICKERS_LIMIT = 10;
+const DEFAULT_INLINE_QUERY_MAX_LENGTH = 256;
 const DEFAULT_INLINE_HISTORY_ENABLED = true;
 const DEFAULT_INLINE_GLOBAL_CONFIG_SCORING_ENABLED = false;
 
@@ -28,6 +30,8 @@ export class StickerConfigManager {
     private debounceDelayCacheTime: number = 0;
     private recentLimitCache: number | null = null;
     private recentLimitCacheTime: number = 0;
+    private inlineQueryMaxLengthCache: number | null = null;
+    private inlineQueryMaxLengthCacheTime: number = 0;
     private inlineHistoryEnabledCache: boolean | null = null;
     private inlineHistoryEnabledCacheTime: number = 0;
     private inlineGlobalConfigScoringEnabledCache: boolean | null = null;
@@ -500,6 +504,47 @@ export class StickerConfigManager {
         await this.redis.set(USER_RECENT_STICKERS_LIMIT_KEY, limit.toString());
         this.recentLimitCache = limit;
         this.recentLimitCacheTime = Date.now();
+    }
+
+    /**
+     * Get maximum length for inline query text
+     */
+    async getInlineQueryMaxLength(): Promise<number> {
+        try {
+            const now = Date.now();
+            if (
+                this.inlineQueryMaxLengthCache !== null &&
+                now - this.inlineQueryMaxLengthCacheTime < CACHE_TTL_MS
+            ) {
+                return this.inlineQueryMaxLengthCache;
+            }
+
+            const value = await this.redis.get(INLINE_QUERY_MAX_LENGTH_KEY);
+            const parsed = value ? parseInt(value, 10) : DEFAULT_INLINE_QUERY_MAX_LENGTH;
+            const limit =
+                Number.isFinite(parsed) && parsed > 0
+                    ? parsed
+                    : DEFAULT_INLINE_QUERY_MAX_LENGTH;
+
+            this.inlineQueryMaxLengthCache = limit;
+            this.inlineQueryMaxLengthCacheTime = now;
+            return limit;
+        } catch (error) {
+            console.error('Error getting inline query max length:', error);
+            return this.inlineQueryMaxLengthCache ?? DEFAULT_INLINE_QUERY_MAX_LENGTH;
+        }
+    }
+
+    /**
+     * Set maximum length for inline query text
+     */
+    async setInlineQueryMaxLength(limit: number): Promise<void> {
+        if (!Number.isFinite(limit) || limit <= 0) {
+            throw new Error('Invalid inline query max length');
+        }
+        await this.redis.set(INLINE_QUERY_MAX_LENGTH_KEY, limit.toString());
+        this.inlineQueryMaxLengthCache = limit;
+        this.inlineQueryMaxLengthCacheTime = Date.now();
     }
 
     /**

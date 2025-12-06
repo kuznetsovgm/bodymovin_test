@@ -322,9 +322,14 @@ async function generateAndCacheStickers(
 
 // Inline query handler with pagination
 bot.on('inline_query', async (ctx) => {
-    const query = ctx.inlineQuery.query;
+    let query = ctx.inlineQuery.query || '';
     const offset = parseInt(ctx.inlineQuery.offset || '0');
     const queryStartTime = Date.now();
+
+    const maxLength = await stickerConfigManager.getInlineQueryMaxLength();
+    if (query.length > maxLength) {
+        query = query.slice(0, maxLength);
+    }
 
     logger.info(`Inline query: offset=${offset}, query="${query}", user=${ctx.from.id}, username=${ctx.from.username || ''}, first_name=${ctx.from.first_name}`);
 
@@ -503,7 +508,12 @@ bot.on('chosen_inline_result', async (ctx) => {
 
     const userId = ctx.from?.id ? ctx.from.id.toString() : null;
     const configId = chosenInlineResult.result_id;
-    const normalizedText = (chosenInlineResult.query || '').trim();
+    let query = chosenInlineResult.query || '';
+    const maxLength = await stickerConfigManager.getInlineQueryMaxLength();
+    if (query.length > maxLength) {
+        query = query.slice(0, maxLength);
+    }
+    const normalizedText = query.trim();
     const redis = stickerCache.getRedis();
 
     try {
