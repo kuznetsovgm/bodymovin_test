@@ -192,7 +192,7 @@ async function generateAndCacheStickers(
     if (!text.trim()) {
         return [];
     }
-    const normalizedText = text.toUpperCase().trim();
+    const normalizedText = text.trim();
 
     // Load enabled sticker configs from Redis
     const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
@@ -517,7 +517,7 @@ bot.on('chosen_inline_result', async (ctx) => {
 
     const userId = ctx.from?.id ? ctx.from.id.toString() : null;
     const configId = chosenInlineResult.result_id;
-    const normalizedText = (chosenInlineResult.query || '').toUpperCase().trim();
+    const normalizedText = (chosenInlineResult.query || '').trim();
     const redis = stickerCache.getRedis();
 
     try {
