@@ -344,7 +344,7 @@ bot.on('inline_query', async (ctx) => {
                 if (recentFileIds.length > 0) {
                     const results: InlineQueryResult[] = recentFileIds.map((fileId, index) => ({
                         type: 'sticker',
-                        id: `recent-${index}-${fileId}`,
+                        id: `recent-${index}`,
                         sticker_file_id: fileId,
                     } as InlineQueryResultCachedSticker));
 
