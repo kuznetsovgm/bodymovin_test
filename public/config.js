@@ -1381,6 +1381,14 @@
 
         let dragStartIndex = null;
 
+        // Разрешаем drop на контейнере (для некоторых браузеров)
+        list.ondragover = (e) => {
+            e.preventDefault();
+        };
+        list.ondrop = (e) => {
+            e.preventDefault();
+        };
+
         state.backgroundLayers.forEach((layer, idx) => {
             const item = document.createElement('div');
             item.className = 'variant-item' + (state.activeBackgroundIndex === idx ? ' active' : '');

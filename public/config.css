@@ -474,6 +474,11 @@ select:focus {
     outline: 1px dashed #38bdf8;
 }
 
+.background-list .variant-item {
+    cursor: grab;
+    user-select: none;
+}
+
 @media (max-width: 900px) {
     .layout {
         grid-template-columns: 1fr;
