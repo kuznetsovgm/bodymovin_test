@@ -618,6 +618,11 @@ function buildGlyphPatternBackground(
 
     for (const entry of glyphEntries) {
         const idx = entry.idx;
+        const bbox = entry.glyph.getBoundingBox();
+        const unitsPerEm = font.unitsPerEm || 1000;
+        const scale = fontSize / unitsPerEm;
+        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * scale;
+        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * scale);
         const pathShapes = glyphToShapes(entry.glyph, entry.char, idx, {
             fontSize,
             duration: ctx.duration,
@@ -632,6 +637,8 @@ function buildGlyphPatternBackground(
             y: entry.y,
             duration: ctx.duration,
             canvasHeight: ctx.height,
+            anchorX,
+            anchorY,
             lettersCount: totalCells,
         });
 
@@ -700,12 +707,19 @@ function buildTextLikeBackground(
             pathMorphAnimations: desc.pathMorphAnimations,
             seed: buildLetterSeed(idx, glyphInfo.char.codePointAt(0) ?? idx, ctx.seed),
         });
+        const bbox = glyphInfo.glyph.getBoundingBox();
+        const unitsPerEm = font.unitsPerEm || 1000;
+        const scale = fontSize / unitsPerEm;
+        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * scale;
+        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * scale);
         const letterTransform = buildBackgroundLetterTransform(desc.letterAnimations, {
             letterIndex: idx,
             x: glyphInfo.x,
             y: glyphInfo.y,
             duration: ctx.duration,
             canvasHeight: ctx.height,
+            anchorX,
+            anchorY,
             lettersCount: total,
         });
         const items: any[] = [...pathShapes];

@@ -10,7 +10,8 @@ function createBaseTransform(index: number, x: number, y: number, anchorX = 0, a
         bm: 0,
         nm: `Transform_${index}`,
         hd: false,
-        p: { a: 0, k: [x, y], ix: 2 },
+        // position включает сдвиг anchor, чтобы визуальная позиция оставалась прежней
+        p: { a: 0, k: [x + anchorX, y + anchorY], ix: 2 },
         a: { a: 0, k: [anchorX, anchorY], ix: 1 },
         s: { a: 0, k: [100, 100], ix: 3 },
         r: { a: 0, k: 0, ix: 6 },
