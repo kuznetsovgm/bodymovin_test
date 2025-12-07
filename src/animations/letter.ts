@@ -10,7 +10,7 @@ function createBaseTransform(index: number, x: number, y: number, anchorX = 0, a
         bm: 0,
         nm: `Transform_${index}`,
         hd: false,
-        // position включает сдвиг anchor, чтобы визуальная позиция оставалась прежней
+        // компенсируем anchor, чтобы буква визуально оставалась на месте
         p: { a: 0, k: [x + anchorX, y + anchorY], ix: 2 },
         a: { a: 0, k: [anchorX, anchorY], ix: 1 },
         s: { a: 0, k: [100, 100], ix: 3 },
@@ -40,8 +40,8 @@ export function buildLetterTransform(
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 pts.push([
-                    +(x + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
-                    +(y + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
+                    +(x + anchorX + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
+                    +(y + anchorY + (Math.random() - 0.5) * intensity * 2).toFixed(FRACTION_DIGITS),
                 ]);
                 times.push(+(t).toFixed(FRACTION_DIGITS));
             }
@@ -59,9 +59,9 @@ export function buildLetterTransform(
             const fallDur = duration * cfg.fallDurationFactor;
             const startY = y - canvasHeight * cfg.startYOffsetFactor;
             const kf = [
-                { t: 0, s: [x, startY], e: [x, startY], i: linearIn(), o: linearOut() },
-                { t: delay, s: [x, startY], e: [x, y], i: linearIn(), o: linearOut() },
-                { t: Math.min(delay + fallDur, duration), s: [x, y] },
+                { t: 0, s: [x + anchorX, startY + anchorY], e: [x + anchorX, startY + anchorY], i: linearIn(), o: linearOut() },
+                { t: delay, s: [x + anchorX, startY + anchorY], e: [x + anchorX, y + anchorY], i: linearIn(), o: linearOut() },
+                { t: Math.min(delay + fallDur, duration), s: [x + anchorX, y + anchorY] },
             ];
             return {
                 ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
@@ -81,7 +81,7 @@ export function buildLetterTransform(
             for (let f = 0; f <= steps; f++) {
                 const t = (f / steps) * duration;
                 const angle = phase + (2 * Math.PI * t) / duration;
-                pts.push([x, y + Math.sin(angle) * amp]);
+                pts.push([x + anchorX, y + anchorY + Math.sin(angle) * amp]);
                 times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
