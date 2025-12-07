@@ -57,6 +57,7 @@ import {
     SolidBackgroundDescriptor,
     FrameBackgroundDescriptor,
     LetterContext,
+    TextTransformOptions,
 } from '../domain/types';
 import { convertOpentypePathToBezier } from '../shapes/bezier';
 import { buildLetterSeed } from '../shared/noise';
@@ -84,6 +85,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         frameRate = DEFAULT_FRAME_RATE,
         duration = DEFAULT_DURATION,
         seed = DEFAULT_SEED,
+        textTransform,
     } = opts;
     const resolvedFontSize = resolveFontSize(text, fontSize, width, height);
     const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
@@ -150,6 +152,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         pathMorphAnimations,
         height,
         seed,
+        textTransform,
     );
     layer.shapes.push(lettersGroup);
 
@@ -207,6 +210,7 @@ function buildLettersGroup(
     pathMorphAnimations: AnimationDescriptor<PathMorphAnimationType>[] | undefined,
     canvasHeight: number,
     seed: number,
+    textTransform?: TextTransformOptions,
 ): GroupShapeElement {
     const totalLetters = layout.length || 1;
     const lettersCount = totalLetters;
@@ -279,7 +283,37 @@ function buildLettersGroup(
             hd: false,
         } as any);
     }
+
+    if (textTransform) {
+        const t = buildTextGroupTransform(textTransform);
+        if (t) {
+            group.it.push(t);
+            group.np = group.it.length;
+        }
+    }
     return group;
+}
+
+function buildTextGroupTransform(t: TextTransformOptions): TransformShape | null {
+    const hasScale = typeof t.scale === 'number' && Number.isFinite(t.scale) && t.scale !== 1 && t.scale > 0;
+    const hasRotation = typeof t.rotationDeg === 'number' && Number.isFinite(t.rotationDeg) && t.rotationDeg !== 0;
+    const hasOffsetX = typeof t.offsetX === 'number' && Number.isFinite(t.offsetX) && t.offsetX !== 0;
+    const hasOffsetY = typeof t.offsetY === 'number' && Number.isFinite(t.offsetY) && t.offsetY !== 0;
+    if (!hasScale && !hasRotation && !hasOffsetX && !hasOffsetY) return null;
+    return {
+        ty: ShapeType.TransformShape,
+        cix: 199,
+        nm: 'TextTransform',
+        bm: 0,
+        hd: false,
+        a: { a: 0, k: [0, 0], ix: 1 },
+        p: { a: 0, k: [t.offsetX || 0, t.offsetY || 0], ix: 2 },
+        s: { a: 0, k: [hasScale ? (t.scale as number) * 100 : 100, hasScale ? (t.scale as number) * 100 : 100], ix: 3 },
+        r: { a: 0, k: hasRotation ? (t.rotationDeg as number) : 0, ix: 6 },
+        o: { a: 0, k: 100, ix: 7 },
+        sk: { a: 0, k: 0, ix: 4 },
+        sa: { a: 0, k: 0, ix: 5 },
+    };
 }
 
 function pickType<T>(descs: AnimationDescriptor<T>[] | undefined, fallback: T): T {

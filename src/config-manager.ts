@@ -68,9 +68,14 @@ export class StickerConfigManager {
             width: _ignoredWidth,
             height: _ignoredHeight,
             fontSize: _ignoredFontSize,
+            textTransform,
             ...rest
         } = config;
-        return rest as Omit<GenerateStickerOptions, 'text'>;
+        const sanitized: any = { ...rest };
+        if (textTransform !== undefined) {
+            sanitized.textTransform = textTransform;
+        }
+        return sanitized as Omit<GenerateStickerOptions, 'text'>;
     }
 
     /**

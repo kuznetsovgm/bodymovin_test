@@ -73,6 +73,13 @@ export type BackgroundScaleRotateOpacity = {
     offsetY?: number;
 };
 
+export type TextTransformOptions = {
+    scale?: number;
+    rotationDeg?: number;
+    offsetX?: number;
+    offsetY?: number;
+};
+
 export type SolidBackgroundParams = BackgroundScaleRotateOpacity & {
     paddingFactor?: number;
     cornerRadius?: number;
@@ -248,6 +255,8 @@ export interface GenerateStickerOptions {
     colorAnimations?: ColorAnimationDescriptor[];
     strokeAnimations?: ColorAnimationDescriptor[];
     pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
+    /** Статичный трансформ для основного текста */
+    textTransform?: TextTransformOptions;
     backgroundLayers?: BackgroundLayerDescriptor[];
     knockoutBackground?: KnockoutBackgroundOptions;
     /** Имя файла шрифта (в директории fonts) */

@@ -6,6 +6,7 @@ import {
     TransformAnimationType,
     BackgroundLayerDescriptor,
     KnockoutBackgroundOptions,
+    TextTransformOptions,
 } from './types';
 import { fontAnimationConfig } from '../config/animation-config';
 
@@ -28,6 +29,7 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         pathMorphAnimations = [{ type: PathMorphAnimationType.None }],
         backgroundLayers,
         knockoutBackground,
+        textTransform,
         frameRate = DEFAULT_FRAME_RATE,
         duration = DEFAULT_DURATION,
         fontSize,
@@ -44,6 +46,7 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         pathMorphAnimations,
         backgroundLayers: backgroundLayers as BackgroundLayerDescriptor[] | undefined,
         knockoutBackground: knockoutBackground as KnockoutBackgroundOptions | undefined,
+        textTransform,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
         frameRate,

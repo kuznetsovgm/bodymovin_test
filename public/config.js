@@ -23,6 +23,13 @@
             startOffsetY: 0,
         },
         previewTheme: 'checker',
+        textTransform: {
+            scale: 1,
+            rotationDeg: 0,
+            offsetX: 0,
+            offsetY: 0,
+        },
+        activeOverlayTarget: 'text',
     };
     const MIN_DURATION_FRAMES = 2;
 
@@ -2106,20 +2113,258 @@
         overlay.appendChild(frame);
     }
 
+    function computeTextVisual() {
+        const container = $('previewContainer');
+        if (!container) return null;
+        const rect = container.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const { width: compWidth, height: compHeight } = getCompositionSize();
+        const baseScale = Math.min(rect.width / (compWidth || 1), rect.height / (compHeight || 1)) || 1;
+        const viewportScale = state.previewViewport?.scale || 1;
+        const scaleFactor = baseScale;
+        const params = state.textTransform || {};
+        const layerScale =
+            typeof params.scale === 'number' && Number.isFinite(params.scale) && params.scale > 0
+                ? params.scale
+                : 1;
+        const rotationDeg =
+            typeof params.rotationDeg === 'number' && Number.isFinite(params.rotationDeg) ? params.rotationDeg : 0;
+        const offsetX =
+            typeof params.offsetX === 'number' && Number.isFinite(params.offsetX) ? params.offsetX : 0;
+        const offsetY =
+            typeof params.offsetY === 'number' && Number.isFinite(params.offsetY) ? params.offsetY : 0;
+
+        const visualWidth = compWidth * layerScale * scaleFactor;
+        const visualHeight = compHeight * layerScale * scaleFactor;
+        const centerX = rect.width / 2 + offsetX * scaleFactor;
+        const centerY = rect.height / 2 + offsetY * scaleFactor;
+        const centerClientX = rect.left + centerX * viewportScale;
+        const centerClientY = rect.top + centerY * viewportScale;
+        return {
+            visualWidth,
+            visualHeight,
+            centerX,
+            centerY,
+            centerClientX,
+            centerClientY,
+            rotationDeg,
+            scaleFactor: baseScale * viewportScale,
+        };
+    }
+
+    const textDragState = {
+        mode: null,
+        startX: 0,
+        startY: 0,
+        startOffsetX: 0,
+        startOffsetY: 0,
+        startScale: 1,
+        startRotation: 0,
+        startRadius: 0,
+        startAngle: 0,
+        scaleFactor: 1,
+        centerClientX: 0,
+        centerClientY: 0,
+    };
+
+    function setActiveOverlayTarget(target) {
+        const value = target === 'background' ? 'background' : 'text';
+        state.activeOverlayTarget = value;
+        const select = $('previewEditTarget');
+        if (select) {
+            select.value = value;
+        }
+        updateBackgroundOverlay();
+        renderPreviewLayersList();
+    }
+
+    function syncTextInputsFromState() {
+        const t = state.textTransform || {};
+        if ($('textScale')) $('textScale').value = t.scale != null ? t.scale : 1;
+        if ($('textRotation')) $('textRotation').value = t.rotationDeg != null ? t.rotationDeg : 0;
+        if ($('textOffsetX')) $('textOffsetX').value = t.offsetX != null ? t.offsetX : 0;
+        if ($('textOffsetY')) $('textOffsetY').value = t.offsetY != null ? t.offsetY : 0;
+    }
+
+    function updateTextTransformFromInputs() {
+        const scale = parseFloat($('textScale').value) || 1;
+        const rotation = parseFloat($('textRotation').value) || 0;
+        const offsetX = parseFloat($('textOffsetX').value) || 0;
+        const offsetY = parseFloat($('textOffsetY').value) || 0;
+        state.textTransform = {
+            scale,
+            rotationDeg: rotation,
+            offsetX,
+            offsetY,
+        };
+        updateBackgroundOverlay();
+        renderPreviewLayersList();
+    }
+
+    function renderPreviewLayersList() {
+        const container = $('previewLayersList');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const addItem = (label, isActive, onClick) => {
+            const el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'preview-layer-item' + (isActive ? ' active' : '');
+            el.textContent = label;
+            el.addEventListener('click', onClick);
+            container.appendChild(el);
+        };
+
+        addItem(
+            'Текст',
+            state.activeOverlayTarget === 'text',
+            () => setActiveOverlayTarget('text'),
+        );
+
+        if (Array.isArray(state.backgroundLayers) && state.backgroundLayers.length) {
+            state.backgroundLayers.forEach((layer, idx) => {
+                const label =
+                    (layer && layer.type ? `${idx + 1}: ${layer.type}` : `Фон ${idx + 1}`);
+                const isActive =
+                    state.activeOverlayTarget === 'background' &&
+                    state.activeBackgroundIndex === idx;
+                addItem(label, isActive, () => {
+                    state.activeBackgroundIndex = idx;
+                    setActiveOverlayTarget('background');
+                    renderBackgroundLayers();
+                    renderBackgroundEditor();
+                });
+            });
+        }
+    }
+
+    function renderTextOverlay(overlay) {
+        const visual = computeTextVisual();
+        if (!overlay || !visual) return;
+        const box = document.createElement('div');
+        box.className = 'bg-layer-box text-box';
+        box.style.width = `${visual.visualWidth}px`;
+        box.style.height = `${visual.visualHeight}px`;
+        box.style.left = `${visual.centerX - visual.visualWidth / 2}px`;
+        box.style.top = `${visual.centerY - visual.visualHeight / 2}px`;
+        // Поворачиваем рамку так же, как итоговый текст
+        box.style.transform = `rotate(${visual.rotationDeg}deg)`;
+        box.style.transformOrigin = '50% 50%';
+
+        const label = document.createElement('div');
+        label.className = 'bg-layer-label';
+        label.textContent = 'Текст';
+        box.appendChild(label);
+
+        const rotateHandle = document.createElement('div');
+        rotateHandle.className = 'bg-layer-handle bg-layer-rotate-handle';
+        rotateHandle.dataset.handle = 'rotate';
+        box.appendChild(rotateHandle);
+
+        const scaleHandle = document.createElement('div');
+        scaleHandle.className = 'bg-layer-handle bg-layer-scale-handle';
+        scaleHandle.dataset.handle = 'scale';
+        box.appendChild(scaleHandle);
+
+        // Фокусируемся на тексте и запускаем нужный режим
+        label.addEventListener('pointerdown', (e) => {
+            setActiveOverlayTarget('text');
+            startTextDrag(e, 'move', visual);
+        });
+        rotateHandle.addEventListener('pointerdown', (e) => {
+            setActiveOverlayTarget('text');
+            startTextDrag(e, 'rotate', visual);
+        });
+        scaleHandle.addEventListener('pointerdown', (e) => {
+            setActiveOverlayTarget('text');
+            startTextDrag(e, 'scale', visual);
+        });
+
+        overlay.appendChild(box);
+    }
+
+    function startTextDrag(event, mode, visual) {
+        textDragState.mode = mode;
+        textDragState.startX = event.clientX;
+        textDragState.startY = event.clientY;
+        textDragState.scaleFactor = visual.scaleFactor || 1;
+        textDragState.centerClientX = visual.centerClientX;
+        textDragState.centerClientY = visual.centerClientY;
+        const params = state.textTransform || {};
+        textDragState.startOffsetX = typeof params.offsetX === 'number' ? params.offsetX : 0;
+        textDragState.startOffsetY = typeof params.offsetY === 'number' ? params.offsetY : 0;
+        textDragState.startScale =
+            typeof params.scale === 'number' && Number.isFinite(params.scale) && params.scale > 0
+                ? params.scale
+                : 1;
+        textDragState.startRotation = typeof params.rotationDeg === 'number' ? params.rotationDeg : 0;
+        if (mode === 'scale' || mode === 'rotate') {
+            const dx = event.clientX - visual.centerClientX;
+            const dy = event.clientY - visual.centerClientY;
+            textDragState.startRadius = Math.sqrt(dx * dx + dy * dy) || 1;
+            textDragState.startAngle = Math.atan2(dy, dx);
+        } else {
+            textDragState.startRadius = 0;
+            textDragState.startAngle = 0;
+        }
+        try {
+            event.preventDefault();
+        } catch {}
+    }
+
+    function handleTextPointerMove(event) {
+        if (!textDragState.mode) return;
+        const params = { ...(state.textTransform || {}) };
+        const scaleFactor = textDragState.scaleFactor || 1;
+        if (textDragState.mode === 'move') {
+            const dx = (event.clientX - textDragState.startX) / scaleFactor;
+            const dy = (event.clientY - textDragState.startY) / scaleFactor;
+            params.offsetX = textDragState.startOffsetX + dx;
+            params.offsetY = textDragState.startOffsetY + dy;
+        } else if (textDragState.mode === 'scale') {
+            const dx = event.clientX - textDragState.centerClientX;
+            const dy = event.clientY - textDragState.centerClientY;
+            const r = Math.sqrt(dx * dx + dy * dy) || textDragState.startRadius || 1;
+            const k = r / (textDragState.startRadius || 1);
+            params.scale = clampNumber(textDragState.startScale * k, 0.1, 10);
+        } else if (textDragState.mode === 'rotate') {
+            const dx = event.clientX - textDragState.centerClientX;
+            const dy = event.clientY - textDragState.centerClientY;
+            const angle = Math.atan2(dy, dx);
+            // положительный deltaDeg при движении по часовой стрелке
+            const deltaDeg = (angle - textDragState.startAngle) * (180 / Math.PI);
+            params.rotationDeg = textDragState.startRotation + deltaDeg;
+        }
+        state.textTransform = params;
+        syncTextInputsFromState();
+        updateBackgroundOverlay();
+        renderPreviewLayersList();
+        try {
+            event.preventDefault();
+        } catch {}
+    }
+
+    function stopTextDrag() {
+        textDragState.mode = null;
+    }
+
     function applyPreviewViewport() {
         const content = $('previewContent');
         if (!content) return;
         const vp = state.previewViewport || { scale: 1, offsetX: 0, offsetY: 0 };
         content.style.transform = `translate(${vp.offsetX}px, ${vp.offsetY}px) scale(${vp.scale})`;
         updateBackgroundOverlay();
+        renderPreviewLayersList();
     }
 
     function updatePreviewControls() {
         const vp = state.previewViewport || { scale: 1, offsetX: 0, offsetY: 0 };
         const scaleInput = $('previewScale');
         const themeSelect = $('previewTheme');
+        const editTargetSelect = $('previewEditTarget');
         if (scaleInput) scaleInput.value = String(vp.scale);
         if (themeSelect) themeSelect.value = state.previewTheme || 'dark';
+        if (editTargetSelect) editTargetSelect.value = state.activeOverlayTarget || 'text';
     }
 
     function computeBackgroundLayerVisual(layer) {
@@ -2213,6 +2458,10 @@
         if (!overlay) return;
         overlay.innerHTML = '';
         renderStickerFrame(overlay);
+        if (state.activeOverlayTarget === 'text') {
+            renderTextOverlay(overlay);
+            return;
+        }
 
         if (state.backgroundMode !== 'layers') {
             return;
@@ -2261,6 +2510,7 @@
             } else if (target && target.dataset && target.dataset.handle === 'scale') {
                 mode = 'scale';
             }
+            setActiveOverlayTarget('background');
             startBackgroundDrag(e, mode, visual, idx);
         });
 
@@ -2376,6 +2626,9 @@
         window.addEventListener('pointermove', handleBackgroundPointerMove);
         window.addEventListener('pointerup', stopBackgroundDrag);
         window.addEventListener('pointercancel', stopBackgroundDrag);
+        window.addEventListener('pointermove', handleTextPointerMove);
+        window.addEventListener('pointerup', stopTextDrag);
+        window.addEventListener('pointercancel', stopTextDrag);
     }
 
     function initPreviewViewportControls() {
@@ -2383,6 +2636,7 @@
         const resetBtn = $('previewResetView');
         const dragHandle = $('previewDragHandle');
         const themeSelect = $('previewTheme');
+        const editTargetSelect = $('previewEditTarget');
 
         const clampScale = (v) => Math.min(3, Math.max(0.3, v));
 
@@ -2456,6 +2710,17 @@
             };
             themeSelect.addEventListener('change', applyTheme);
             applyTheme();
+        }
+
+        if (editTargetSelect) {
+            const applyTarget = () => {
+                const val = editTargetSelect.value === 'background' ? 'background' : 'text';
+                state.activeOverlayTarget = val;
+                updateBackgroundOverlay();
+                renderPreviewLayersList();
+            };
+            editTargetSelect.addEventListener('change', applyTarget);
+            applyTarget();
         }
 
         updatePreviewControls();
@@ -2732,7 +2997,9 @@
         }
         renderBackgroundLayers();
         renderKnockoutControls();
+        renderPreviewLayersList();
         updateBackgroundVisibility();
+        renderPreviewLayersList();
     }
 
     function resetTextAnimationsForKnockout() {
@@ -2847,6 +3114,13 @@
         const frameRate = parseInt($('frameRate').value || '60', 10) || 60;
         const duration = Math.max(MIN_DURATION_FRAMES, parseInt($('duration').value || '0', 10) || MIN_DURATION_FRAMES);
         const fontFile = $('fontFile').value || undefined;
+        const textTransform = {
+            scale: parseFloat($('textScale').value) || 1,
+            rotationDeg: parseFloat($('textRotation').value) || 0,
+            offsetX: parseFloat($('textOffsetX').value) || 0,
+            offsetY: parseFloat($('textOffsetY').value) || 0,
+        };
+        state.textTransform = { ...textTransform };
 
         const transformType = $('transformType').value;
         const colorType = $('colorType').value;
@@ -2926,6 +3200,8 @@
         if (pathMorphs.length) cfg.pathMorphAnimations = pathMorphs;
         else delete cfg.pathMorphAnimations;
 
+        cfg.textTransform = { ...textTransform };
+
         if (state.backgroundMode === 'layers' && Array.isArray(state.backgroundLayers) && state.backgroundLayers.length) {
             const serialized = state.backgroundLayers
                 .map((layer) => {
@@ -2985,6 +3261,18 @@
         if (cfg.fontFile) {
             $('fontFile').value = cfg.fontFile;
         }
+        const textTransform = cfg.textTransform || {};
+        state.textTransform = {
+            scale: textTransform.scale != null ? textTransform.scale : 1,
+            rotationDeg: textTransform.rotationDeg != null ? textTransform.rotationDeg : 0,
+            offsetX: textTransform.offsetX != null ? textTransform.offsetX : 0,
+            offsetY: textTransform.offsetY != null ? textTransform.offsetY : 0,
+        };
+        $('textScale').value = state.textTransform.scale;
+        $('textRotation').value = state.textTransform.rotationDeg;
+        $('textOffsetX').value = state.textTransform.offsetX;
+        $('textOffsetY').value = state.textTransform.offsetY;
+        updateBackgroundOverlay();
         $('enabled').checked = !!wrapper.enabled;
 
         state.backgroundMode = cfg.knockoutBackground ? 'knockout' : 'layers';
@@ -3057,6 +3345,7 @@
         updatePathWarning();
         renderBackgroundLayers();
         renderKnockoutControls();
+        renderPreviewLayersList();
     }
 
     async function refreshVariants() {
@@ -3236,6 +3525,11 @@
             } else {
                 $('fontFile').value = '';
             }
+            $('textScale').value = '1';
+            $('textRotation').value = '0';
+            $('textOffsetX').value = '0';
+            $('textOffsetY').value = '0';
+            state.textTransform = { scale: 1, rotationDeg: 0, offsetX: 0, offsetY: 0 };
             $('enabled').checked = true;
             $('transformType').value = 'none';
             $('colorType').value = 'none';
@@ -3278,6 +3572,7 @@
             if (bgModeKnockoutRadio) bgModeKnockoutRadio.checked = false;
             renderBackgroundLayers();
             renderKnockoutControls();
+            renderPreviewLayersList();
             updateBackgroundVisibility();
             renderVariants();
             setStatus('Новый вариант');
@@ -3291,6 +3586,13 @@
         });
         durationInput.addEventListener('input', () => {
             setDurationValue(parseInt(durationInput.value || '0', 10) || 0);
+        });
+        ['textScale', 'textRotation', 'textOffsetX', 'textOffsetY'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', updateTextTransformFromInputs);
+                el.addEventListener('change', updateTextTransformFromInputs);
+            }
         });
         const fontSelectEl = $('fontFile');
         if (fontSelectEl) {
@@ -3495,6 +3797,7 @@
         await refreshVariants();
         state.initialized = true;
         initPreviewViewportControls();
+        renderPreviewLayersList();
     }
 
     window.addEventListener('DOMContentLoaded', init);
