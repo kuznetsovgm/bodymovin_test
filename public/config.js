@@ -2262,8 +2262,10 @@
         scaleHandle.dataset.handle = 'scale';
         box.appendChild(scaleHandle);
 
-        // Фокусируемся на тексте и запускаем нужный режим
-        label.addEventListener('pointerdown', (e) => {
+        // Перетаскивание по всему квадрату (кроме хэндлов)
+        box.addEventListener('pointerdown', (e) => {
+            const target = e.target;
+            if (target && target.dataset && target.dataset.handle) return;
             setActiveOverlayTarget('text');
             startTextDrag(e, 'move', visual);
         });

@@ -440,11 +440,13 @@ select:focus {
     box-sizing: border-box;
     pointer-events: auto;
     cursor: move;
+    touch-action: none;
 }
 
 .text-box {
     border-color: #38bdf8;
     z-index: 2;
+    touch-action: none;
 }
 
 .bg-layer-label {
@@ -459,11 +461,12 @@ select:focus {
 
 .bg-layer-handle {
     position: absolute;
-    width: 10px;
-    height: 10px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: #f97316;
     border: 1px solid #0f172a;
+    touch-action: none;
 }
 
 .bg-layer-rotate-handle {
@@ -531,6 +534,7 @@ select:focus {
     cursor: grab;
     user-select: none;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    touch-action: none;
 }
 
 .preview-drag-handle:active {
