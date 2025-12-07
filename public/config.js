@@ -2170,10 +2170,6 @@
     function setActiveOverlayTarget(target) {
         const value = target === 'background' ? 'background' : 'text';
         state.activeOverlayTarget = value;
-        const select = $('previewEditTarget');
-        if (select) {
-            select.value = value;
-        }
         updateBackgroundOverlay();
         renderPreviewLayersList();
     }
@@ -2361,10 +2357,8 @@
         const vp = state.previewViewport || { scale: 1, offsetX: 0, offsetY: 0 };
         const scaleInput = $('previewScale');
         const themeSelect = $('previewTheme');
-        const editTargetSelect = $('previewEditTarget');
         if (scaleInput) scaleInput.value = String(vp.scale);
         if (themeSelect) themeSelect.value = state.previewTheme || 'dark';
-        if (editTargetSelect) editTargetSelect.value = state.activeOverlayTarget || 'text';
     }
 
     function computeBackgroundLayerVisual(layer) {
@@ -2636,7 +2630,6 @@
         const resetBtn = $('previewResetView');
         const dragHandle = $('previewDragHandle');
         const themeSelect = $('previewTheme');
-        const editTargetSelect = $('previewEditTarget');
 
         const clampScale = (v) => Math.min(3, Math.max(0.3, v));
 
@@ -2710,17 +2703,6 @@
             };
             themeSelect.addEventListener('change', applyTheme);
             applyTheme();
-        }
-
-        if (editTargetSelect) {
-            const applyTarget = () => {
-                const val = editTargetSelect.value === 'background' ? 'background' : 'text';
-                state.activeOverlayTarget = val;
-                updateBackgroundOverlay();
-                renderPreviewLayersList();
-            };
-            editTargetSelect.addEventListener('change', applyTarget);
-            applyTarget();
         }
 
         updatePreviewControls();
