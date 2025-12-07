@@ -508,6 +508,10 @@ bot.on('chosen_inline_result', async (ctx) => {
 
     const userId = ctx.from?.id ? ctx.from.id.toString() : null;
     const configId = chosenInlineResult.result_id;
+    // Ignore selections from personal history (their IDs start with "recent-")
+    if (configId && configId.startsWith('recent-')) {
+        return;
+    }
     let query = chosenInlineResult.query || '';
     const maxLength = await stickerConfigManager.getInlineQueryMaxLength();
     if (query.length > maxLength) {

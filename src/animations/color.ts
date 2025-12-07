@@ -35,8 +35,40 @@ export function buildColorTrack(
                 ...colorAnimationConfig[ColorAnimationType.Rainbow],
                 ...(params ?? {}),
             };
-            const baseTimes = cfg.times.map((t: number) => t * duration);
-            const shifted = baseTimes.map((t: number) => (t + phase * duration) % duration);
+            const lettersCount = (params as any)?.lettersCount as number | undefined;
+            const baseNormTimes = cfg.times as number[];
+            const colors = cfg.colors as [number, number, number, number][];
+            const direction = cfg.reverse ? -1 : 1;
+
+            // Special per-letter window: compress track into window 1 / lettersCount
+            const uniqueRgbCount = new Set(
+                colors.map((c) => `${c[0]}_${c[1]}_${c[2]}`),
+            ).size;
+            const useWindow =
+                typeof lettersCount === 'number' && lettersCount > 1 && uniqueRgbCount <= 1;
+
+            if (useWindow) {
+                const windowWidth = 1 / lettersCount;
+                const clampedPhase = Math.max(0, Math.min(1, phase));
+                const phaseForDir = direction === -1 ? 1 - clampedPhase : clampedPhase;
+                const startNorm = phaseForDir * (1 - windowWidth);
+                const times = baseNormTimes.map(
+                    (t: number) => (startNorm + t * windowWidth) * duration,
+                );
+                return {
+                    a: 1,
+                    k: buildRawKeyframes(
+                        cfg.colors as [number, number, number, number][],
+                        times,
+                        true,
+                    ),
+                };
+            }
+
+            // Generic wave: cyclic shift of full track
+            const baseTimes = baseNormTimes.map((t: number) => t * duration);
+            const shift = direction * phase * duration;
+            const shifted = baseTimes.map((t: number) => (t + shift + duration) % duration);
             const pairs = baseTimes
                 .map((t: number, i: number) => ({ time: shifted[i], color: cfg.colors[i] }))
                 .sort((a: { time: number }, b: { time: number }) => a.time - b.time);

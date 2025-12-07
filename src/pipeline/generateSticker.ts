@@ -207,6 +207,7 @@ function buildLettersGroup(
     seed: number,
 ): GroupShapeElement {
     const totalLetters = layout.length || 1;
+    const lettersCount = totalLetters;
     const group: GroupShapeElement = {
         ty: ShapeType.Group,
         cix: 1,
@@ -216,6 +217,19 @@ function buildLettersGroup(
         bm: 0,
         hd: false,
     };
+
+    const colorAnimationsWithLetters =
+        colorAnimations &&
+        colorAnimations.map((desc) => ({
+            ...desc,
+            params: { ...(desc.params ?? {}), lettersCount },
+        }));
+    const strokeAnimationsWithLetters =
+        strokeAnimations &&
+        strokeAnimations.map((desc) => ({
+            ...desc,
+            params: { ...(desc.params ?? {}), lettersCount },
+        }));
 
     // Layer-level style (applied once per group)
     for (const glyphInfo of layout) {
@@ -237,8 +251,8 @@ function buildLettersGroup(
         });
 
         const items: any[] = [...pathShapes];
-        const phase = (totalLetters - 1 - letterIndex) / totalLetters;
-        const styles = buildLetterStyles(colorAnimations, strokeAnimations, {
+        const phase = lettersCount <= 1 ? 0 : letterIndex / (lettersCount - 1);
+        const styles = buildLetterStyles(colorAnimationsWithLetters, strokeAnimationsWithLetters, {
             duration,
             letterPhase: phase,
             letterIndex,
@@ -500,7 +514,11 @@ function buildStripesBackground(desc: StripesBackgroundDescriptor, ctx: Backgrou
             hd: false,
         };
         const phase =
-            desc.params?.colorPhaseStep != null ? (i * desc.params.colorPhaseStep) % 1 : i / stripes;
+            desc.params?.colorPhaseStep != null
+                ? (i * desc.params.colorPhaseStep) % 1
+                : stripes <= 1
+                ? 0
+                : i / stripes;
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,
             letterPhase: phase,
@@ -578,7 +596,11 @@ function buildGlyphPatternBackground(
 
             const items: any[] = [...pathShapes];
             const phase =
-                desc.params?.colorPhaseStep != null ? (idx * desc.params.colorPhaseStep) % 1 : idx / totalCells;
+                desc.params?.colorPhaseStep != null
+                    ? (idx * desc.params.colorPhaseStep) % 1
+                    : totalCells <= 1
+                    ? 0
+                    : idx / totalCells;
             const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
                 duration: ctx.duration,
                 letterPhase: phase,
@@ -648,6 +670,8 @@ function buildTextLikeBackground(
         const items: any[] = [...pathShapes];
         const phase = desc.params?.colorPhaseStep
             ? ((idx * desc.params.colorPhaseStep) % 1)
+            : total <= 1
+            ? 0
             : (total - 1 - idx) / total;
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,

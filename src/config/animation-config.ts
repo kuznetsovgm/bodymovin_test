@@ -75,6 +75,8 @@ export type ColorKeyframeTrackConfig = {
     times: number[];
     /** Зацикливать ли анимацию */
     loop: boolean;
+    /** Обратное направление радуги */
+    reverse?: boolean;
 };
 
 export type NoneColorConfig = {

@@ -1239,6 +1239,40 @@
 
         container.appendChild(buttonsWrap);
 
+        // Reverse direction for rainbow
+        if (type === 'rainbow') {
+            const reverseLabel = document.createElement('label');
+            reverseLabel.style.display = 'flex';
+            reverseLabel.style.alignItems = 'center';
+            reverseLabel.style.gap = '4px';
+            reverseLabel.style.fontSize = '11px';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.dataset.role = 'reverse';
+
+            let defaultReverse = false;
+            if (values && typeof values.reverse === 'boolean') {
+                defaultReverse = values.reverse;
+            } else if (
+                state.meta &&
+                state.meta.defaults &&
+                state.meta.defaults.colorAnimationConfig &&
+                state.meta.defaults.colorAnimationConfig[type] &&
+                typeof state.meta.defaults.colorAnimationConfig[type].reverse === 'boolean'
+            ) {
+                defaultReverse = state.meta.defaults.colorAnimationConfig[type].reverse;
+            }
+            checkbox.checked = defaultReverse;
+
+            const reverseText = document.createElement('span');
+            reverseText.textContent = 'Обратное направление';
+
+            reverseLabel.appendChild(checkbox);
+            reverseLabel.appendChild(reverseText);
+            container.appendChild(reverseLabel);
+        }
+
         if (options.isStroke) {
             const strokeLabel = document.createElement('label');
             strokeLabel.textContent = 'Толщина обводки (px)';
@@ -1328,6 +1362,11 @@
                     result.strokeWidth = width;
                 }
             }
+        }
+
+        const reverseInput = container.querySelector('input[data-role="reverse"]');
+        if (reverseInput) {
+            result.reverse = reverseInput.checked;
         }
 
         return result;
