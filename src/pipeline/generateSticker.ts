@@ -569,7 +569,13 @@ function buildGlyphPatternBackground(
     const glyphW = cellW * (1 - spacingX * 0.5);
     const glyphH = cellH * (1 - spacingY * 0.5);
     const fontSize = Math.max(8, Math.min(glyphW, glyphH));
-    const groups: GroupShapeElement[] = [];
+    const glyphEntries: {
+        idx: number;
+        char: string;
+        glyph: opentype.Glyph;
+        x: number;
+        y: number;
+    }[] = [];
 
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -578,48 +584,71 @@ function buildGlyphPatternBackground(
             if (!char) continue;
             const glyph = font.charToGlyph(char);
             if (!glyph) continue;
-            const pathShapes = glyphToShapes(glyph, char, idx, {
-                fontSize,
-                duration: ctx.duration,
-                pathMorphAnimation: pickType(desc.pathMorphAnimations, PathMorphAnimationType.None),
-                pathMorphAnimations: desc.pathMorphAnimations,
-                seed: buildLetterSeed(idx, char.codePointAt(0) ?? idx, ctx.seed),
-            });
-
-            const letterTransform = buildBackgroundLetterTransform(desc.letterAnimations, {
-                letterIndex: idx,
-                x: -ctx.width / 2 + cellW * (col + 0.5),
-                y: -ctx.height / 2 + cellH * (row + 0.5),
-                duration: ctx.duration,
-                canvasHeight: ctx.height,
-            });
-
-            const items: any[] = [...pathShapes];
-            const phase =
-                desc.params?.colorPhaseStep != null
-                    ? (idx * desc.params.colorPhaseStep) % 1
-                    : totalCells <= 1
-                    ? 0
-                    : idx / totalCells;
-            const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
-                duration: ctx.duration,
-                letterPhase: phase,
-                letterIndex: idx,
-            });
-            if (styles.fill) items.push(styles.fill);
-            if (styles.stroke) items.push(styles.stroke);
-            if (letterTransform) items.push(letterTransform);
-
-            groups.push({
-                ty: ShapeType.Group,
-                cix: 6000 + idx,
-                it: items,
-                np: items.length,
-                nm: `glyph_bg_${idx}`,
-                bm: 0,
-                hd: false,
+            const bbox = glyph.getBoundingBox();
+            const centerTargetX = -ctx.width / 2 + cellW * (col + 0.5);
+            const centerTargetY = -ctx.height / 2 + cellH * (row + 0.5);
+            const gx1 = typeof bbox.x1 === 'number' ? bbox.x1 : 0;
+            const gx2 = typeof bbox.x2 === 'number' ? bbox.x2 : 0;
+            const gy1 = typeof bbox.y1 === 'number' ? bbox.y1 : 0;
+            const gy2 = typeof bbox.y2 === 'number' ? bbox.y2 : 0;
+            const glyphCenterX = ((gx1 + gx2) / 2) * (fontSize / font.unitsPerEm);
+            // Опорные координаты glyph идут в оси Y вверх, поэтому инвертируем знак
+            const glyphCenterY = -((gy1 + gy2) / 2) * (fontSize / font.unitsPerEm);
+            glyphEntries.push({
+                idx,
+                char,
+                glyph,
+                x: centerTargetX - glyphCenterX,
+                y: centerTargetY - glyphCenterY,
             });
         }
+    }
+
+    const groups: GroupShapeElement[] = [];
+
+    for (const entry of glyphEntries) {
+        const idx = entry.idx;
+        const pathShapes = glyphToShapes(entry.glyph, entry.char, idx, {
+            fontSize,
+            duration: ctx.duration,
+            pathMorphAnimation: pickType(desc.pathMorphAnimations, PathMorphAnimationType.None),
+            pathMorphAnimations: desc.pathMorphAnimations,
+            seed: buildLetterSeed(idx, entry.char.codePointAt(0) ?? idx, ctx.seed),
+        });
+
+        const letterTransform = buildBackgroundLetterTransform(desc.letterAnimations, {
+            letterIndex: idx,
+            x: entry.x,
+            y: entry.y,
+            duration: ctx.duration,
+            canvasHeight: ctx.height,
+        });
+
+        const items: any[] = [...pathShapes];
+        const phase =
+            desc.params?.colorPhaseStep != null
+                ? (idx * desc.params.colorPhaseStep) % 1
+                : totalCells <= 1
+                ? 0
+                : idx / totalCells;
+        const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
+            duration: ctx.duration,
+            letterPhase: phase,
+            letterIndex: idx,
+        });
+        if (styles.fill) items.push(styles.fill);
+        if (styles.stroke) items.push(styles.stroke);
+        if (letterTransform) items.push(letterTransform);
+
+        groups.push({
+            ty: ShapeType.Group,
+            cix: 6000 + idx,
+            it: items,
+            np: items.length,
+            nm: `glyph_bg_${idx}`,
+            bm: 0,
+            hd: false,
+        });
     }
 
     const transform = buildTransformShape(

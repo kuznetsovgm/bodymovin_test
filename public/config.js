@@ -12,6 +12,17 @@
         activeBackgroundIndex: null,
         knockout: null,
         backgroundMode: 'layers',
+        previewViewport: {
+            scale: 1,
+            offsetX: 0,
+            offsetY: 0,
+            dragging: false,
+            startX: 0,
+            startY: 0,
+            startOffsetX: 0,
+            startOffsetY: 0,
+        },
+        previewTheme: 'checker',
     };
     const MIN_DURATION_FRAMES = 2;
 
@@ -1403,6 +1414,7 @@
             list.appendChild(info);
             state.activeBackgroundIndex = null;
             renderBackgroundEditor(true);
+            updateBackgroundOverlay();
             return;
         }
 
@@ -1415,6 +1427,7 @@
             list.appendChild(empty);
             state.activeBackgroundIndex = null;
             renderBackgroundEditor();
+            updateBackgroundOverlay();
             return;
         }
 
@@ -1522,6 +1535,7 @@
             state.activeBackgroundIndex = 0;
         }
         renderBackgroundEditor();
+        updateBackgroundOverlay();
     }
 
     function renderBackgroundEditor(disabledMode = false) {
@@ -1996,6 +2010,419 @@
         } else {
             glyphPreview.textContent = '—';
         }
+        updateBackgroundOverlay();
+    }
+
+    const backgroundDragState = {
+        mode: null,
+        layerIndex: null,
+        startMouseX: 0,
+        startMouseY: 0,
+        startOffsetX: 0,
+        startOffsetY: 0,
+        startScale: 1,
+        startRotationDeg: 0,
+        startRadius: 0,
+        startAngleRad: 0,
+        scaleFactor: 1,
+        viewportScale: 1,
+        centerClientX: 0,
+        centerClientY: 0,
+    };
+
+    function getCompositionSize() {
+        const defaults = state.meta && state.meta.defaults;
+        const width = (defaults && typeof defaults.width === 'number' && defaults.width > 0) ? defaults.width : 512;
+        const height =
+            (defaults && typeof defaults.height === 'number' && defaults.height > 0) ? defaults.height : 512;
+        return { width, height };
+    }
+
+    function ensurePreviewOverlay() {
+        const content = $('previewContent') || $('previewContainer');
+        if (!content) return null;
+        let overlay = content.querySelector('.preview-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'preview-overlay';
+            content.appendChild(overlay);
+        }
+        return overlay;
+    }
+
+    function renderStickerFrame(overlay) {
+        if (!overlay) return;
+        const { width: compWidth, height: compHeight } = getCompositionSize();
+        const overlayRect = overlay.getBoundingClientRect();
+        const ow = overlay.clientWidth || overlayRect.width;
+        const oh = overlay.clientHeight || overlayRect.height;
+        if (!ow || !oh || !compWidth || !compHeight) return;
+        const scale = Math.min(ow / compWidth, oh / compHeight);
+        const frameW = compWidth * scale;
+        const frameH = compHeight * scale;
+        const frame = document.createElement('div');
+        frame.className = 'sticker-frame';
+        frame.style.width = `${frameW}px`;
+        frame.style.height = `${frameH}px`;
+        frame.style.left = `${(ow - frameW) / 2}px`;
+        frame.style.top = `${(oh - frameH) / 2}px`;
+        overlay.appendChild(frame);
+    }
+
+    function applyPreviewViewport() {
+        const content = $('previewContent');
+        if (!content) return;
+        const vp = state.previewViewport || { scale: 1, offsetX: 0, offsetY: 0 };
+        content.style.transform = `translate(${vp.offsetX}px, ${vp.offsetY}px) scale(${vp.scale})`;
+        updateBackgroundOverlay();
+    }
+
+    function updatePreviewControls() {
+        const vp = state.previewViewport || { scale: 1, offsetX: 0, offsetY: 0 };
+        const scaleInput = $('previewScale');
+        const themeSelect = $('previewTheme');
+        if (scaleInput) scaleInput.value = String(vp.scale);
+        if (themeSelect) themeSelect.value = state.previewTheme || 'dark';
+    }
+
+    function computeBackgroundLayerVisual(layer) {
+        if (!layer) return null;
+        const container = $('previewContainer');
+        const content = $('previewContent') || container;
+        if (!container || !content) return null;
+        const containerRect = container.getBoundingClientRect();
+        if (!containerRect.width || !containerRect.height) return null;
+        const contentRect = content.getBoundingClientRect();
+        const viewportScale = state.previewViewport?.scale || 1;
+
+        const { width: compWidth, height: compHeight } = getCompositionSize();
+        const scaleFactor = Math.min(
+            containerRect.width / (compWidth || 1),
+            containerRect.height / (compHeight || 1),
+        ) || 1;
+
+        const params = normalizeBackgroundParams(layer.type, layer.params || {});
+
+        let baseW = compWidth;
+        let baseH = compHeight;
+        if (layer.type === 'solid' || layer.type === 'frame') {
+            const padding = Math.max(0, Math.min(0.5, params.paddingFactor ?? 0));
+            baseW = compWidth * (1 + padding * 2);
+            baseH = compHeight * (1 + padding * 2);
+        } else if (layer.type === 'stripes') {
+            const gapFactor = Math.max(0, Math.min(1, params.gapFactor ?? 0.05));
+            baseW = compWidth;
+            baseH = compHeight * (1 + gapFactor * 2);
+        }
+
+        const layerScale =
+            typeof params.scale === 'number' && Number.isFinite(params.scale) && params.scale > 0
+                ? params.scale
+                : 1;
+        const rotationDeg =
+            typeof params.rotationDeg === 'number' && Number.isFinite(params.rotationDeg)
+                ? params.rotationDeg
+                : 0;
+        const offsetX =
+            typeof params.offsetX === 'number' && Number.isFinite(params.offsetX) ? params.offsetX : 0;
+        const offsetY =
+            typeof params.offsetY === 'number' && Number.isFinite(params.offsetY) ? params.offsetY : 0;
+
+        const visualWidth = baseW * layerScale * scaleFactor;
+        const visualHeight = baseH * layerScale * scaleFactor;
+        const centerX = containerRect.width / 2 + offsetX * scaleFactor;
+        const centerY = containerRect.height / 2 + offsetY * scaleFactor;
+        const centerClientX = contentRect.left + contentRect.width / 2 + offsetX * scaleFactor * viewportScale;
+        const centerClientY = contentRect.top + contentRect.height / 2 + offsetY * scaleFactor * viewportScale;
+
+        return {
+            containerRect,
+            scaleFactor,
+            baseWidth: baseW,
+            baseHeight: baseH,
+            visualWidth,
+            visualHeight,
+            centerX,
+            centerY,
+            centerClientX,
+            centerClientY,
+            rotationDeg,
+            offsetX,
+            offsetY,
+            layerScale,
+        };
+    }
+
+    function syncBackgroundParamInputsFromLayer(layer) {
+        const editor = $('backgroundLayerEditor');
+        if (!editor || !layer || !layer.params) return;
+        const params = layer.params;
+        Object.keys(params).forEach((key) => {
+            if (typeof params[key] !== 'number') return;
+            const value = params[key];
+            const numInput = editor.querySelector(
+                `input[type="number"][data-param-key="${key}"]`,
+            );
+            const rangeInput = editor.querySelector(
+                `input[type="range"][data-param-key="${key}"]`,
+            );
+            if (numInput) numInput.value = String(value);
+            if (rangeInput) rangeInput.value = String(value);
+        });
+    }
+
+    function updateBackgroundOverlay() {
+        const overlay = ensurePreviewOverlay();
+        if (!overlay) return;
+        overlay.innerHTML = '';
+        renderStickerFrame(overlay);
+
+        if (state.backgroundMode !== 'layers') {
+            return;
+        }
+        const idx = state.activeBackgroundIndex;
+        if (idx == null || !state.backgroundLayers || !state.backgroundLayers[idx]) {
+            return;
+        }
+        const layer = state.backgroundLayers[idx];
+        const visual = computeBackgroundLayerVisual(layer);
+        if (!visual) return;
+
+        const box = document.createElement('div');
+        box.className = 'bg-layer-box';
+        box.dataset.layerIndex = String(idx);
+
+        const left = visual.centerX - visual.visualWidth / 2;
+        const top = visual.centerY - visual.visualHeight / 2;
+        box.style.width = `${visual.visualWidth}px`;
+        box.style.height = `${visual.visualHeight}px`;
+        box.style.left = `${left}px`;
+        box.style.top = `${top}px`;
+        box.style.transform = `rotate(${visual.rotationDeg}deg)`;
+        box.style.transformOrigin = '50% 50%';
+
+        const label = document.createElement('div');
+        label.className = 'bg-layer-label';
+        label.textContent = layer.type || 'layer';
+        box.appendChild(label);
+
+        const rotateHandle = document.createElement('div');
+        rotateHandle.className = 'bg-layer-handle bg-layer-rotate-handle';
+        rotateHandle.dataset.handle = 'rotate';
+        box.appendChild(rotateHandle);
+
+        const scaleHandle = document.createElement('div');
+        scaleHandle.className = 'bg-layer-handle bg-layer-scale-handle';
+        scaleHandle.dataset.handle = 'scale';
+        box.appendChild(scaleHandle);
+
+        box.addEventListener('pointerdown', (e) => {
+            const target = e.target;
+            let mode = 'move';
+            if (target && target.dataset && target.dataset.handle === 'rotate') {
+                mode = 'rotate';
+            } else if (target && target.dataset && target.dataset.handle === 'scale') {
+                mode = 'scale';
+            }
+            startBackgroundDrag(e, mode, visual, idx);
+        });
+
+        overlay.appendChild(box);
+    }
+
+    function startBackgroundDrag(event, mode, visual, layerIndex) {
+        if (state.backgroundMode !== 'layers') return;
+        if (!state.backgroundLayers || !state.backgroundLayers[layerIndex]) return;
+        const layer = state.backgroundLayers[layerIndex];
+        const params = layer.params || {};
+
+        backgroundDragState.mode = mode;
+        backgroundDragState.layerIndex = layerIndex;
+        backgroundDragState.startMouseX = event.clientX;
+        backgroundDragState.startMouseY = event.clientY;
+        backgroundDragState.scaleFactor = visual.scaleFactor || 1;
+        backgroundDragState.centerClientX = visual.centerClientX;
+        backgroundDragState.centerClientY = visual.centerClientY;
+
+        const offsetX =
+            typeof params.offsetX === 'number' && Number.isFinite(params.offsetX) ? params.offsetX : 0;
+        const offsetY =
+            typeof params.offsetY === 'number' && Number.isFinite(params.offsetY) ? params.offsetY : 0;
+        const scale =
+            typeof params.scale === 'number' && Number.isFinite(params.scale) && params.scale > 0
+                ? params.scale
+                : 1;
+        const rotationDeg =
+            typeof params.rotationDeg === 'number' && Number.isFinite(params.rotationDeg)
+                ? params.rotationDeg
+                : 0;
+
+        backgroundDragState.startOffsetX = offsetX;
+        backgroundDragState.startOffsetY = offsetY;
+        backgroundDragState.startScale = scale;
+        backgroundDragState.startRotationDeg = rotationDeg;
+        backgroundDragState.viewportScale = 1;
+
+        if (mode === 'scale' || mode === 'rotate') {
+            const dx0 = event.clientX - visual.centerClientX;
+            const dy0 = event.clientY - visual.centerClientY;
+            backgroundDragState.startRadius = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
+            backgroundDragState.startAngleRad = Math.atan2(dy0, dx0);
+        } else {
+            backgroundDragState.startRadius = 0;
+            backgroundDragState.startAngleRad = 0;
+        }
+
+        try {
+            event.preventDefault();
+        } catch {
+            // ignore
+        }
+    }
+
+    function handleBackgroundPointerMove(event) {
+        if (!backgroundDragState.mode) return;
+        if (backgroundDragState.layerIndex == null) return;
+        if (!state.backgroundLayers || !state.backgroundLayers[backgroundDragState.layerIndex]) return;
+        const layer = state.backgroundLayers[backgroundDragState.layerIndex];
+        const params = { ...(layer.params || {}) };
+
+        const mode = backgroundDragState.mode;
+        const scaleFactor = backgroundDragState.scaleFactor || 1;
+
+        if (mode === 'move') {
+            const dxPx = event.clientX - backgroundDragState.startMouseX;
+            const dyPx = event.clientY - backgroundDragState.startMouseY;
+            const dx = dxPx / scaleFactor;
+            const dy = dyPx / scaleFactor;
+            params.offsetX = backgroundDragState.startOffsetX + dx;
+            params.offsetY = backgroundDragState.startOffsetY + dy;
+        } else if (mode === 'scale') {
+            const cx = backgroundDragState.centerClientX;
+            const cy = backgroundDragState.centerClientY;
+            const dx = event.clientX - cx;
+            const dy = event.clientY - cy;
+            const r = Math.sqrt(dx * dx + dy * dy) || backgroundDragState.startRadius || 1;
+            const k = r / (backgroundDragState.startRadius || 1);
+            let nextScale = backgroundDragState.startScale * (Number.isFinite(k) ? k : 1);
+            nextScale = clampNumber(nextScale, 0.1, 10);
+            params.scale = nextScale;
+        } else if (mode === 'rotate') {
+            const cx = backgroundDragState.centerClientX;
+            const cy = backgroundDragState.centerClientY;
+            const dx = event.clientX - cx;
+            const dy = event.clientY - cy;
+            const angle = Math.atan2(dy, dx);
+            const deltaRad = angle - backgroundDragState.startAngleRad;
+            const deltaDeg = (deltaRad * 180) / Math.PI;
+            params.rotationDeg = backgroundDragState.startRotationDeg + deltaDeg;
+        }
+
+        layer.params = normalizeBackgroundParams(layer.type, params);
+        syncBackgroundParamInputsFromLayer(layer);
+        updateBackgroundOverlay();
+
+        try {
+            event.preventDefault();
+        } catch {
+            // ignore
+        }
+    }
+
+    function stopBackgroundDrag() {
+        backgroundDragState.mode = null;
+        backgroundDragState.layerIndex = null;
+    }
+
+    function initBackgroundOverlay() {
+        ensurePreviewOverlay();
+        window.addEventListener('pointermove', handleBackgroundPointerMove);
+        window.addEventListener('pointerup', stopBackgroundDrag);
+        window.addEventListener('pointercancel', stopBackgroundDrag);
+    }
+
+    function initPreviewViewportControls() {
+        const scaleInput = $('previewScale');
+        const resetBtn = $('previewResetView');
+        const dragHandle = $('previewDragHandle');
+        const themeSelect = $('previewTheme');
+
+        const clampScale = (v) => Math.min(3, Math.max(0.3, v));
+
+        if (scaleInput) {
+            scaleInput.addEventListener('input', () => {
+                const val = clampScale(parseFloat(scaleInput.value) || 1);
+                state.previewViewport.scale = val;
+                applyPreviewViewport();
+                updateBackgroundOverlay();
+            });
+        }
+
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                state.previewViewport.scale = 1;
+                state.previewViewport.offsetX = 0;
+                state.previewViewport.offsetY = 0;
+                updatePreviewControls();
+                applyPreviewViewport();
+            });
+        }
+
+        if (dragHandle) {
+            const onPointerDown = (e) => {
+                state.previewViewport.dragging = true;
+                state.previewViewport.startX = e.clientX;
+                state.previewViewport.startY = e.clientY;
+                state.previewViewport.startOffsetX = state.previewViewport.offsetX;
+                state.previewViewport.startOffsetY = state.previewViewport.offsetY;
+                if (dragHandle.setPointerCapture) {
+                    dragHandle.setPointerCapture(e.pointerId);
+                }
+            };
+            const onPointerMove = (e) => {
+                if (!state.previewViewport.dragging) return;
+                const dx = e.clientX - state.previewViewport.startX;
+                const dy = e.clientY - state.previewViewport.startY;
+                state.previewViewport.offsetX = state.previewViewport.startOffsetX + dx;
+                state.previewViewport.offsetY = state.previewViewport.startOffsetY + dy;
+                updatePreviewControls();
+                applyPreviewViewport();
+            };
+            const stop = (e) => {
+                if (state.previewViewport.dragging && e && e.pointerId != null) {
+                    if (dragHandle.releasePointerCapture) {
+                        try {
+                            dragHandle.releasePointerCapture(e.pointerId);
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+                state.previewViewport.dragging = false;
+            };
+            dragHandle.addEventListener('pointerdown', onPointerDown);
+            dragHandle.addEventListener('pointermove', onPointerMove);
+            dragHandle.addEventListener('pointerup', stop);
+            dragHandle.addEventListener('pointercancel', stop);
+            dragHandle.addEventListener('lostpointercapture', stop);
+        }
+
+        if (themeSelect) {
+            const applyTheme = () => {
+                const val = themeSelect.value || 'dark';
+                state.previewTheme = val;
+                const container = $('previewContainer');
+                if (container) {
+                    container.classList.remove('theme-dark', 'theme-light', 'theme-checker');
+                    container.classList.add(`theme-${val}`);
+                }
+            };
+            themeSelect.addEventListener('change', applyTheme);
+            applyTheme();
+        }
+
+        updatePreviewControls();
+        applyPreviewViewport();
     }
 
     function updateFontFilePreview() {
@@ -2738,6 +3165,7 @@
                 },
             });
 
+            updateBackgroundOverlay();
             $('sizeLabel').textContent = `${res.sizeKB} КБ (${res.sizeBytes} байт)`;
             setStatus('Предпросмотр обновлён');
         } catch (err) {
@@ -2750,6 +3178,8 @@
         const frameRateSelect = $('frameRate');
         const durationSlider = $('durationSlider');
         const durationInput = $('duration');
+
+        initBackgroundOverlay();
 
         $('newVariantBtn').addEventListener('click', () => {
             state.activeId = null;
@@ -3025,6 +3455,7 @@
 
         await refreshVariants();
         state.initialized = true;
+        initPreviewViewportControls();
     }
 
     window.addEventListener('DOMContentLoaded', init);

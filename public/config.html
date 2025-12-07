@@ -223,9 +223,29 @@
                 </div>
 
                 <div class="preview-section">
-                    <h2>Предпросмотр</h2>
-                    <div id="previewContainer" class="preview-container">
-                        <canvas id="previewCanvas" width="512" height="512"></canvas>
+                    <div class="preview-header">
+                        <h2>Предпросмотр</h2>
+                        <div class="preview-controls">
+                            <label class="compact">
+                                Фон
+                                <select id="previewTheme">
+                                    <option value="dark">Тёмный</option>
+                                    <option value="light">Светлый</option>
+                                    <option value="checker" selected>Чекер</option>
+                                </select>
+                            </label>
+                            <label class="compact">
+                                Scale
+                                <input id="previewScale" type="range" min="0.3" max="3" step="0.05" value="1">
+                            </label>
+                            <button id="previewResetView" type="button" class="small-button">Сброс</button>
+                        </div>
+                    </div>
+                    <div id="previewDragHandle" class="preview-drag-handle" title="Перетащите, чтобы сдвинуть окно предпросмотра">Перетащить окно</div>
+                    <div id="previewContainer" class="preview-container theme-checker">
+                        <div id="previewContent" class="preview-content">
+                            <canvas id="previewCanvas" width="512" height="512"></canvas>
+                        </div>
                     </div>
                     <div class="preview-info">
                         <span>Размер файла: <strong id="sizeLabel">—</strong></span>

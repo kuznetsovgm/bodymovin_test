@@ -24,7 +24,7 @@ export function layoutText(
         const text = lines[lineIdx];
         const total = font.getAdvanceWidth(text, fontSize);
         let x = -total / 2;
-        const y = -totalHeight / 2 + lineIdx * lineHeight + fontSize * 0.75;
+        const y = -totalHeight / 2 + lineIdx * lineHeight + fontSize * 0.8;
         for (let i = 0; i < text.length; i++) {
             const ch = text[i];
             if (ch === ' ') {
