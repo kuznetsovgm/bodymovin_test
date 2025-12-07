@@ -106,7 +106,14 @@ function parseBody(req: JsonRequest): Promise<any> {
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathname: string) {
     // Serve fonts (ttf/otf) from configured font directory, including glyphs subdir
     if (pathname.startsWith('/fonts/')) {
-        const rel = pathname.replace(/^\/+/, '').replace(/^\.+/, '');
+        // На всякий случай декодируем URL (пробелы, %20 и т.п.)
+        let safePath = pathname;
+        try {
+            safePath = decodeURIComponent(pathname);
+        } catch {
+            // игнорируем ошибки декодирования, используем исходный путь
+        }
+        const rel = safePath.replace(/^\/+/, '').replace(/^\.+/, '');
         const filePath = path.resolve(fontAnimationConfig.fontDirectory, rel.replace(/^fonts\//, ''));
         if (!/\.(ttf|otf)$/i.test(filePath)) {
             notFound(res);
@@ -118,7 +125,9 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathna
                 return;
             }
             res.statusCode = 200;
-            res.setHeader('Content-Type', 'font/ttf');
+            const ext = path.extname(filePath).toLowerCase();
+            const contentType = ext === '.otf' ? 'font/otf' : 'font/ttf';
+            res.setHeader('Content-Type', contentType);
             const stream = fs.createReadStream(filePath);
             stream.on('error', () => {
                 if (!res.headersSent) res.statusCode = 500;

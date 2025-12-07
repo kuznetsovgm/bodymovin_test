@@ -895,43 +895,55 @@
     }
 
     function ensureGlyphFontLoaded(fontFile) {
-        if (!fontFile) return;
+        if (!fontFile) return null;
+        const familyName = 'glyphPreviewFont_' + fontFile.replace(/[^a-z0-9]+/gi, '_');
         const existing = document.getElementById('glyphPreviewFontStyle');
-        if (existing && existing.dataset.fontFile === fontFile) return;
+        if (existing && existing.dataset.fontFile === fontFile && existing.dataset.familyName === familyName) {
+            return familyName;
+        }
         if (existing) existing.remove();
         const style = document.createElement('style');
         style.id = 'glyphPreviewFontStyle';
         style.dataset.fontFile = fontFile;
-        // Пытаемся сначала из fonts/glyphs, затем из fonts
+        style.dataset.familyName = familyName;
+        const lower = fontFile.toLowerCase ? fontFile.toLowerCase() : fontFile;
+        const fontFormat = lower.endsWith('.otf') ? 'opentype' : 'truetype';
         style.textContent = `
 @font-face {
-    font-family: 'glyphPreviewFont';
-    src: url('./fonts/glyphs/${fontFile}') format('truetype'),
-         url('./fonts/${fontFile}') format('truetype');
+    font-family: '${familyName}';
+    src: url('./fonts/glyphs/${fontFile}') format('${fontFormat}'),
+         url('./fonts/${fontFile}') format('${fontFormat}');
     font-display: swap;
 }
 `;
         document.head.appendChild(style);
+        return familyName;
     }
 
 
     function ensureFontPreviewFace(fontFile) {
-        if (!fontFile) return;
+        if (!fontFile) return null;
+        const familyName = 'fontPreviewFace_' + fontFile.replace(/[^a-z0-9]+/gi, '_');
         const existing = document.getElementById('fontPreviewStyle');
-        if (existing && existing.dataset.fontFile === fontFile) return;
+        if (existing && existing.dataset.fontFile === fontFile && existing.dataset.familyName === familyName) {
+            return familyName;
+        }
         if (existing) existing.remove();
         const style = document.createElement('style');
         style.id = 'fontPreviewStyle';
         style.dataset.fontFile = fontFile;
+        style.dataset.familyName = familyName;
+        const lower = fontFile.toLowerCase ? fontFile.toLowerCase() : fontFile;
+        const fontFormat = lower.endsWith('.otf') ? 'opentype' : 'truetype';
         style.textContent = `
 @font-face {
-    font-family: 'fontPreviewFace';
-    src: url('./fonts/glyphs/${fontFile}') format('truetype'),
-         url('./fonts/${fontFile}') format('truetype');
+    font-family: '${familyName}';
+    src: url('./fonts/${fontFile}') format('${fontFormat}');
     font-display: swap;
 }
 `;
         document.head.appendChild(style);
+        return familyName;
     }
 
     function renderParams(container, schema, values, meta, defaults) {
@@ -1684,7 +1696,7 @@
                 glyphPreview.textContent = '—';
                 return;
             }
-            ensureGlyphFontLoaded(fontFile);
+            const glyphFontFamily = ensureGlyphFontLoaded(fontFile) || 'glyphPreviewFont_fallback';
             glyphPreview.textContent = 'Загрузка...';
             fetch(`./api/glyphs?font=${encodeURIComponent(fontFile)}`)
                 .then((res) => res.json())
@@ -1716,7 +1728,7 @@
 
                         const tdChar = document.createElement('td');
                         tdChar.textContent = g.char;
-                        tdChar.style.fontFamily = 'glyphPreviewFont';
+                        tdChar.style.fontFamily = glyphFontFamily;
                         tdChar.className = 'glyph-char-cell';
 
                         const tdLiteral = document.createElement('td');
@@ -2716,11 +2728,13 @@
         const sample = $('fontFilePreviewSample');
         const textInput = $('previewText');
         if (!fontSelect || !sample) return;
-        const fontFile = fontSelect.value || (state.meta && state.meta.defaults && state.meta.defaults.fontFile) || '';
-        ensureFontPreviewFace(fontFile);
+        const fontFile =
+            fontSelect.value || (state.meta && state.meta.defaults && state.meta.defaults.fontFile) || '';
+        const previewFontFamily =
+            ensureFontPreviewFace(fontFile) || 'fontPreviewFace_fallback';
         const text = (textInput && textInput.value) || 'Abc АБВ 123 ✦☆';
         sample.textContent = text;
-        sample.style.fontFamily = 'fontPreviewFace';
+        sample.style.fontFamily = previewFontFamily;
     }
 
     function renderKnockoutControls() {
