@@ -156,6 +156,19 @@ export type LetterRotateConfig = {
     loop: boolean;
 };
 
+export type LetterSnakeScaleConfig = {
+    /** Сколько букв охватывает «хвост» змейки (минимум 1) */
+    windowSize: number;
+    /** Минимальный масштаб (%) */
+    minScale: number;
+    /** Максимальный масштаб (%) */
+    maxScale: number;
+    /** Кол-во шагов для построения ключей (чем больше, тем плавнее) */
+    steps: number;
+    /** Движение змейки справа налево */
+    reverse?: boolean;
+};
+
 export type LetterAnimationConfig = {
     [LetterAnimationType.None]: {};
     [LetterAnimationType.Vibrate]: LetterVibrateConfig;
@@ -163,6 +176,7 @@ export type LetterAnimationConfig = {
     [LetterAnimationType.Wave]: LetterWaveConfig;
     [LetterAnimationType.ZigZag]: LetterZigZagConfig;
     [LetterAnimationType.Rotate]: LetterRotateConfig;
+    [LetterAnimationType.SnakeScale]: LetterSnakeScaleConfig;
 };
 
 export const letterAnimationConfig: LetterAnimationConfig = {
@@ -191,6 +205,13 @@ export const letterAnimationConfig: LetterAnimationConfig = {
         fromAngle: 0,
         toAngle: 360,
         loop: false,
+    },
+    [LetterAnimationType.SnakeScale]: {
+        windowSize: 4,
+        minScale: 90,
+        maxScale: 130,
+        steps: 32,
+        reverse: false,
     },
 };
 

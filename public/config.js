@@ -80,6 +80,13 @@
             toAngle: 'number',
             loop: 'boolean',
         },
+        snakeScale: {
+            windowSize: 'number',
+            minScale: 'number',
+            maxScale: 'number',
+            steps: 'number',
+            reverse: 'boolean',
+        },
     };
 
     const pathMorphSchema = {
@@ -302,6 +309,35 @@
             },
             loop: {
                 label: 'Зациклить вращение',
+            },
+        },
+        snakeScale: {
+            windowSize: {
+                label: 'Длина хвоста (букв)',
+                step: 1,
+                min: 1,
+                max: 50,
+            },
+            minScale: {
+                label: 'Мин. масштаб (%)',
+                step: 1,
+                min: 10,
+                max: 500,
+            },
+            maxScale: {
+                label: 'Макс. масштаб (%)',
+                step: 1,
+                min: 10,
+                max: 500,
+            },
+            steps: {
+                label: 'Шаги',
+                step: 1,
+                min: 4,
+                max: 200,
+            },
+            reverse: {
+                label: 'Обратное направление',
             },
         },
     };
@@ -1860,6 +1896,7 @@
                 { value: 'wave', label: 'Wave' },
                 { value: 'zigzag', label: 'ZigZag' },
                 { value: 'rotate', label: 'Rotate' },
+                { value: 'snakeScale', label: 'SnakeScale' },
             ]);
             const letter = (layer.letterAnimations && layer.letterAnimations[0]) || null;
             letterSelect.value = (letter && letter.type) || 'none';
@@ -2654,6 +2691,7 @@
             { value: 'wave', label: 'Wave' },
             { value: 'zigzag', label: 'ZigZag' },
             { value: 'rotate', label: 'Rotate' },
+            { value: 'snakeScale', label: 'SnakeScale' },
         ]);
         const koLetter = (state.knockout.letterAnimations && state.knockout.letterAnimations[0]) || null;
         letterSelectEl.value = (koLetter && koLetter.type) || 'none';
@@ -3372,6 +3410,7 @@
             { value: 'wave', label: 'Wave' },
             { value: 'zigzag', label: 'ZigZag' },
             { value: 'rotate', label: 'Rotate' },
+            { value: 'snakeScale', label: 'SnakeScale' },
         ]);
         fillSelect($('pathMorphType'), [
             { value: 'none', label: 'None' },

@@ -33,6 +33,7 @@ export enum LetterAnimationType {
     Wave = 'wave',
     ZigZag = 'zigzag',
     Rotate = 'rotate',
+    SnakeScale = 'snakeScale',
 }
 
 export enum PathMorphAnimationType {
@@ -201,6 +202,9 @@ export type LetterContext = {
     y: number;
     duration: number;
     canvasHeight: number;
+    anchorX?: number;
+    anchorY?: number;
+    lettersCount?: number;
 };
 export type ColorContext = { duration: number };
 

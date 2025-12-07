@@ -1,17 +1,9 @@
 import { TransformShape, ShapeType } from '../interfaces/lottie';
-import { ComposeFn, LetterAnimationDescriptor, LetterAnimationType } from '../domain/types';
-import { buildRawKeyframes, buildValueKeyframes, linearIn, linearOut } from '../shared/keyframes';
+import { ComposeFn, LetterAnimationDescriptor, LetterAnimationType, LetterContext } from '../domain/types';
+import { buildRawKeyframes, buildValueKeyframes, buildVecTrack, linearIn, linearOut } from '../shared/keyframes';
 import { FRACTION_DIGITS, letterAnimationConfig } from '../config/animation-config';
 
-export type LetterContext = {
-    letterIndex: number;
-    x: number;
-    y: number;
-    duration: number;
-    canvasHeight: number;
-};
-
-function createBaseTransform(index: number, x: number, y: number): TransformShape {
+function createBaseTransform(index: number, x: number, y: number, anchorX = 0, anchorY = 0): TransformShape {
     return {
         cix: 200 + index,
         ty: ShapeType.TransformShape,
@@ -19,7 +11,7 @@ function createBaseTransform(index: number, x: number, y: number): TransformShap
         nm: `Transform_${index}`,
         hd: false,
         p: { a: 0, k: [x, y], ix: 2 },
-        a: { a: 0, k: [0, 0], ix: 1 },
+        a: { a: 0, k: [anchorX, anchorY], ix: 1 },
         s: { a: 0, k: [100, 100], ix: 3 },
         r: { a: 0, k: 0, ix: 6 },
         o: { a: 0, k: 100, ix: 7 },
@@ -33,7 +25,7 @@ export function buildLetterTransform(
     ctx: LetterContext,
     params?: any,
 ): TransformShape {
-    const { letterIndex, x, y, duration, canvasHeight } = ctx;
+    const { letterIndex, x, y, duration, canvasHeight, anchorX = 0, anchorY = 0 } = ctx;
     switch (type) {
         case LetterAnimationType.Vibrate: {
             const cfg = {
@@ -53,7 +45,7 @@ export function buildLetterTransform(
                 times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
-                ...createBaseTransform(letterIndex, x, y),
+                ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
                 p: { a: 1, k: buildRawKeyframes(pts, times, true), ix: 2 } as any,
             };
         }
@@ -71,7 +63,7 @@ export function buildLetterTransform(
                 { t: Math.min(delay + fallDur, duration), s: [x, y] },
             ];
             return {
-                ...createBaseTransform(letterIndex, x, y),
+                ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
                 p: { a: 1, k: kf, ix: 2 } as any,
             };
         }
@@ -92,7 +84,7 @@ export function buildLetterTransform(
                 times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
-                ...createBaseTransform(letterIndex, x, y),
+                ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
                 p: { a: 1, k: buildRawKeyframes(pts, times, true), ix: 2 } as any,
             };
         }
@@ -114,7 +106,7 @@ export function buildLetterTransform(
                 times.push(+(t).toFixed(FRACTION_DIGITS));
             }
             return {
-                ...createBaseTransform(letterIndex, x, y),
+                ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
                 s: { a: 1, k: buildRawKeyframes(pts, times, true), ix: 3 } as any,
             };
         }
@@ -123,9 +115,8 @@ export function buildLetterTransform(
                 ...letterAnimationConfig[LetterAnimationType.Rotate],
                 ...(params ?? {}),
             };
-            const base = createBaseTransform(letterIndex, x, y);
             return {
-                ...base,
+                ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
                 r: {
                     a: 1,
                     k: buildRawKeyframes(
@@ -137,9 +128,40 @@ export function buildLetterTransform(
                 } as any,
             };
         }
+        case LetterAnimationType.SnakeScale: {
+            const cfg = { ...letterAnimationConfig[LetterAnimationType.SnakeScale], ...(params ?? {}) };
+            const windowSize = Math.max(1, Math.round(cfg.windowSize || 1));
+            const minScale = Math.max(0, cfg.minScale || 0);
+            const maxScale = Math.max(minScale, cfg.maxScale || minScale);
+            const steps = Math.max(4, Math.round(cfg.steps || 16));
+            const totalLetters = typeof ctx.lettersCount === 'number' ? Math.max(1, ctx.lettersCount) : Math.max(1, letterIndex + 1);
+            const idx = cfg.reverse ? totalLetters - 1 - letterIndex : letterIndex;
+            const times: number[] = [];
+            const values: number[][] = [];
+            for (let f = 0; f <= steps; f++) {
+                const tNorm = f / steps;
+                const head = tNorm * (totalLetters + windowSize);
+                const dist = head - idx;
+                let factor: number;
+                if (dist < 0 || dist > windowSize) {
+                    factor = 0;
+                } else {
+                    const edge = Math.min(dist, windowSize - dist);
+                    factor = 1 - edge / Math.max(1, windowSize);
+                }
+                const scale = minScale + (maxScale - minScale) * factor;
+                times.push(tNorm * duration);
+                values.push([scale, scale]);
+            }
+            const kf = buildVecTrack(values, times, true);
+            return {
+                ...createBaseTransform(letterIndex, x, y, anchorX, anchorY),
+                s: { a: 1, k: kf as any, ix: 3 } as any,
+            };
+        }
         case LetterAnimationType.None:
         default:
-            return createBaseTransform(letterIndex, x, y);
+            return createBaseTransform(letterIndex, x, y, anchorX, anchorY);
     }
 }
 

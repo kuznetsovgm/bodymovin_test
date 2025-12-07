@@ -141,6 +141,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
 
     const lettersGroup = buildLettersGroup(
         layout,
+        fontObj,
         finalFontSize,
         colorAnimations,
         strokeAnimations,
@@ -197,6 +198,7 @@ function buildBaseLayer(width: number, height: number, duration: number, name: s
 
 function buildLettersGroup(
     layout: ReturnType<typeof layoutText>,
+    font: opentype.Font,
     fontSize: number,
     colorAnimations: ColorAnimationDescriptor[] | undefined,
     strokeAnimations: ColorAnimationDescriptor[] | undefined,
@@ -234,6 +236,11 @@ function buildLettersGroup(
     // Layer-level style (applied once per group)
     for (const glyphInfo of layout) {
         const { char: ch, glyph, x, y, letterIndex } = glyphInfo;
+        const bbox = glyph.getBoundingBox();
+        const unitsPerEm = font.unitsPerEm || 1000;
+        const scale = fontSize / unitsPerEm;
+        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * scale;
+        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * scale);
         const pathShapes = glyphToShapes(glyph, ch, letterIndex, {
             fontSize,
             duration,
@@ -248,6 +255,9 @@ function buildLettersGroup(
             y,
             duration,
             canvasHeight,
+            anchorX,
+            anchorY,
+            lettersCount,
         });
 
         const items: any[] = [...pathShapes];
@@ -622,6 +632,7 @@ function buildGlyphPatternBackground(
             y: entry.y,
             duration: ctx.duration,
             canvasHeight: ctx.height,
+            lettersCount: totalCells,
         });
 
         const items: any[] = [...pathShapes];
@@ -695,6 +706,7 @@ function buildTextLikeBackground(
             y: glyphInfo.y,
             duration: ctx.duration,
             canvasHeight: ctx.height,
+            lettersCount: total,
         });
         const items: any[] = [...pathShapes];
         const phase = desc.params?.colorPhaseStep

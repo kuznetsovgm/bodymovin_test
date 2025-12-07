@@ -1,7 +1,7 @@
-import { AnimationDescriptor, ColorAnimationType, LetterAnimationType, PathMorphAnimationType, TransformAnimationType } from '../domain/types';
+import { AnimationDescriptor, ColorAnimationType, LetterAnimationType, PathMorphAnimationType, TransformAnimationType, LetterContext } from '../domain/types';
 import { TransformPatch, buildTransformPatch } from './transform';
 import { buildColorTrack, ColorContext } from './color';
-import { buildLetterTransform, LetterContext } from './letter';
+import { buildLetterTransform } from './letter';
 import { buildPathMorphKeyframes } from '../shapes/bezier';
 import { ShapeLayer } from '../interfaces/lottie';
 import { Track } from '../shared/keyframes';
@@ -46,6 +46,7 @@ export const letterRegistry: Record<LetterAnimationType, (ctx: LetterContext, pa
     [LetterAnimationType.Wave]: (ctx, params) => buildLetterTransform(LetterAnimationType.Wave, ctx, params),
     [LetterAnimationType.ZigZag]: (ctx, params) => buildLetterTransform(LetterAnimationType.ZigZag, ctx, params),
     [LetterAnimationType.Rotate]: (ctx, params) => buildLetterTransform(LetterAnimationType.Rotate, ctx, params),
+    [LetterAnimationType.SnakeScale]: (ctx, params) => buildLetterTransform(LetterAnimationType.SnakeScale, ctx, params),
 };
 
 export const pathMorphRegistry: Record<
