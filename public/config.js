@@ -456,6 +456,14 @@
         );
     }
 
+    function getBackgroundParamDefaults(type) {
+        const defaults = getBackgroundDefaults(type);
+        if (defaults && defaults.params) {
+            return deepCopy(defaults.params);
+        }
+        return null;
+    }
+
     function deepCopy(obj) {
         return obj == null ? obj : JSON.parse(JSON.stringify(obj));
     }
@@ -810,6 +818,60 @@
         return Math.min(hi, Math.max(lo, val));
     }
 
+    function roundToPrecision(val, precision = 2) {
+        if (typeof val !== 'number' || Number.isNaN(val)) return val;
+        const safePrecision = Math.max(0, Math.min(10, precision));
+        const factor = 10 ** safePrecision;
+        return Math.round(val * factor) / factor;
+    }
+
+    function formatNumberValue(val, precision = 2) {
+        if (typeof val !== 'number' || Number.isNaN(val)) return '';
+        const rounded = roundToPrecision(val, precision);
+        if (Number.isInteger(rounded)) return String(rounded);
+        return rounded
+            .toFixed(precision)
+            .replace(/\.0+$/, '')
+            .replace(/(\.\d*?)0+$/, '$1');
+    }
+
+    function dispatchParamEvents(input) {
+        if (!input) return;
+        try {
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch {
+            // ignore
+        }
+    }
+
+    function createResetButton(onReset) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'param-reset-btn';
+        btn.title = 'Сбросить значение по умолчанию';
+        btn.textContent = '↺';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onReset();
+        });
+        return btn;
+    }
+
+    function getParamDefaultValue(type, key, defaults, metaCfg) {
+        if (defaults && Object.prototype.hasOwnProperty.call(defaults, key)) {
+            return deepCopy(defaults[key]);
+        }
+        if (metaCfg && Object.prototype.hasOwnProperty.call(metaCfg, 'default')) {
+            return deepCopy(metaCfg.default);
+        }
+        if (type === 'boolean') return false;
+        if (type === 'number') return 0;
+        if (type === 'numberArray' || type === 'vec4Array') return [];
+        return '';
+    }
+
     function normalizeBackgroundParams(type, params) {
         const meta = getBackgroundParamMeta(type) || {};
         const normalized = { ...(params || {}) };
@@ -954,22 +1016,37 @@
         return familyName;
     }
 
-    function renderParams(container, schema, values, meta, defaults) {
+    function renderParams(container, schema, values, meta, defaults = undefined) {
         container.innerHTML = '';
         Object.entries(schema).forEach(([key, type]) => {
             const label = document.createElement('label');
             const metaCfg = meta && meta[key];
-            label.textContent = metaCfg && metaCfg.label ? metaCfg.label : key;
             if (metaCfg && metaCfg.hint) {
                 label.title = metaCfg.hint;
             }
+            const header = document.createElement('div');
+            header.className = 'param-label-row';
+            const title = document.createElement('span');
+            title.textContent = metaCfg && metaCfg.label ? metaCfg.label : key;
+            header.appendChild(title);
+            label.appendChild(header);
+
+            const defaultValue = getParamDefaultValue(type, key, defaults || {}, metaCfg);
 
             if (type === 'boolean') {
                 const input = document.createElement('input');
                 input.type = 'checkbox';
                 input.dataset.paramKey = key;
-                input.checked = Boolean(values && values[key]);
+                const defaultChecked = typeof defaultValue === 'boolean' ? defaultValue : Boolean(defaultValue);
+                input.checked =
+                    values && typeof values[key] === 'boolean' ? Boolean(values[key]) : defaultChecked;
                 label.appendChild(input);
+                header.appendChild(
+                    createResetButton(() => {
+                        input.checked = defaultChecked;
+                        dispatchParamEvents(input);
+                    }),
+                );
                 container.appendChild(label);
                 return;
             }
@@ -979,26 +1056,29 @@
                 wrapper.className = 'slider-with-input';
                 const slider = document.createElement('input');
                 slider.type = 'range';
+                slider.dataset.paramKey = key;
                 const numberInput = document.createElement('input');
                 numberInput.type = 'number';
                 numberInput.dataset.paramKey = key;
                 const step = metaCfg && metaCfg.step != null ? metaCfg.step : 0.01;
                 slider.step = String(step);
                 numberInput.step = String(step);
-                const defaultValue =
-                    defaults && typeof defaults[key] === 'number'
-                        ? defaults[key]
-                        : metaCfg?.default ?? 0;
+                const defaultNumber =
+                    typeof defaultValue === 'number'
+                        ? defaultValue
+                        : metaCfg && typeof metaCfg.default === 'number'
+                            ? metaCfg.default
+                            : 0;
                 const currentValue =
-                    values && typeof values[key] === 'number' ? values[key] : defaultValue;
+                    values && typeof values[key] === 'number' ? values[key] : defaultNumber;
                 const min =
                     metaCfg && metaCfg.min != null
                         ? metaCfg.min
-                        : Math.min(0, Number(defaultValue) || 0);
+                        : Math.min(0, Number(defaultNumber) || 0);
                 const max =
                     metaCfg && metaCfg.max != null
                         ? metaCfg.max
-                        : Math.max(Math.abs(Number(defaultValue) || 0) * 2, 100);
+                        : Math.max(Math.abs(Number(defaultNumber) || 0) * 2, 100);
                 const sliderMax = max > min ? max : min + 1;
                 slider.min = String(min);
                 slider.max = String(sliderMax);
@@ -1020,6 +1100,14 @@
                 wrapper.appendChild(slider);
                 wrapper.appendChild(numberInput);
                 label.appendChild(wrapper);
+                header.appendChild(
+                    createResetButton(() => {
+                        const clampedDefault = Math.min(Math.max(defaultNumber, min), sliderMax);
+                        numberInput.value = String(defaultNumber);
+                        slider.value = String(clampedDefault);
+                        dispatchParamEvents(numberInput);
+                    }),
+                );
                 container.appendChild(label);
                 return;
             }
@@ -1034,6 +1122,17 @@
                 input.value = String(val);
             }
             label.appendChild(input);
+            header.appendChild(
+                createResetButton(() => {
+                    if (type === 'numberArray' || type === 'vec4Array') {
+                        const arr = Array.isArray(defaultValue) ? defaultValue : [];
+                        input.value = JSON.stringify(arr);
+                    } else {
+                        input.value = defaultValue != null ? String(defaultValue) : '';
+                    }
+                    dispatchParamEvents(input);
+                }),
+            );
             container.appendChild(label);
         });
     }
@@ -1118,6 +1217,8 @@
             return;
         }
 
+        const defaultValues = options.defaultValues || getColorDefaults(type) || null;
+
         const presets = getColorPresets(type);
         if (presets.length) {
             const presetRow = document.createElement('div');
@@ -1160,19 +1261,27 @@
             if (!sourceColors.length) sourceColors = [[1, 1, 1, 1]];
             sourceTimes = [0];
         }
+        const loopDefault =
+            (defaultValues && typeof defaultValues.loop === 'boolean'
+                ? defaultValues.loop
+                : undefined) ?? (options.fallbackLoop ?? !isStatic);
         const loop =
             values && typeof values.loop === 'boolean'
                 ? values.loop
-                : options.fallbackLoop ?? !isStatic;
+                : loopDefault;
+        const strokeWidthDefault =
+            options.isStroke
+                ? (defaultValues && typeof defaultValues.strokeWidth === 'number'
+                    ? defaultValues.strokeWidth
+                    : options.fallbackStrokeWidth ?? 2)
+                : undefined;
         const strokeWidthValue =
             options.isStroke &&
                 values &&
                 typeof values.strokeWidth === 'number' &&
                 Number.isFinite(values.strokeWidth)
                 ? values.strokeWidth
-                : options.isStroke
-                    ? options.fallbackStrokeWidth
-                    : undefined;
+                : strokeWidthDefault;
 
         const rowsWrap = document.createElement('div');
         rowsWrap.className = 'color-rows';
@@ -1308,6 +1417,12 @@
         const loopText = document.createElement('span');
         loopText.textContent = 'Зациклить';
         loopLabel.appendChild(loopText);
+        loopLabel.appendChild(
+            createResetButton(() => {
+                loopCheckbox.checked = loopDefault;
+                dispatchParamEvents(loopCheckbox);
+            }),
+        );
 
         buttonsWrap.appendChild(loopLabel);
 
@@ -1325,31 +1440,33 @@
             checkbox.type = 'checkbox';
             checkbox.dataset.role = 'reverse';
 
-            let defaultReverse = false;
-            if (values && typeof values.reverse === 'boolean') {
-                defaultReverse = values.reverse;
-            } else if (
-                state.meta &&
-                state.meta.defaults &&
-                state.meta.defaults.colorAnimationConfig &&
-                state.meta.defaults.colorAnimationConfig[type] &&
-                typeof state.meta.defaults.colorAnimationConfig[type].reverse === 'boolean'
-            ) {
-                defaultReverse = state.meta.defaults.colorAnimationConfig[type].reverse;
-            }
-            checkbox.checked = defaultReverse;
+            const reverseDefault =
+                defaultValues && typeof defaultValues.reverse === 'boolean' ? defaultValues.reverse : false;
+            const reverseValue =
+                values && typeof values.reverse === 'boolean' ? values.reverse : reverseDefault;
+            checkbox.checked = reverseValue;
 
             const reverseText = document.createElement('span');
             reverseText.textContent = 'Обратное направление';
 
             reverseLabel.appendChild(checkbox);
             reverseLabel.appendChild(reverseText);
+            reverseLabel.appendChild(
+                createResetButton(() => {
+                    checkbox.checked = reverseDefault;
+                    dispatchParamEvents(checkbox);
+                }),
+            );
             container.appendChild(reverseLabel);
         }
 
         if (options.isStroke) {
             const strokeLabel = document.createElement('label');
-            strokeLabel.textContent = 'Толщина обводки (px)';
+            const header = document.createElement('div');
+            header.className = 'param-label-row';
+            const title = document.createElement('span');
+            title.textContent = 'Толщина обводки (px)';
+            header.appendChild(title);
             const strokeInput = document.createElement('input');
             strokeInput.type = 'number';
             strokeInput.step = '0.5';
@@ -1358,6 +1475,17 @@
             if (typeof strokeWidthValue === 'number') {
                 strokeInput.value = String(strokeWidthValue);
             }
+            header.appendChild(
+                createResetButton(() => {
+                    if (typeof strokeWidthDefault === 'number') {
+                        strokeInput.value = String(strokeWidthDefault);
+                    } else {
+                        strokeInput.value = '';
+                    }
+                    dispatchParamEvents(strokeInput);
+                }),
+            );
+            strokeLabel.appendChild(header);
             strokeLabel.appendChild(strokeInput);
             container.appendChild(strokeLabel);
         }
@@ -1517,9 +1645,27 @@
             title.appendChild(label);
             item.appendChild(title);
 
+            const actions = document.createElement('div');
+            actions.className = 'background-item-actions';
+
+            const cloneBtn = document.createElement('button');
+            cloneBtn.type = 'button';
+            cloneBtn.textContent = '⧉';
+            cloneBtn.title = 'Клонировать слой';
+            cloneBtn.className = 'small-button';
+            cloneBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const clone = deepCopy(layer);
+                state.backgroundLayers.splice(idx + 1, 0, clone);
+                state.activeBackgroundIndex = idx + 1;
+                renderBackgroundLayers();
+            });
+            actions.appendChild(cloneBtn);
+
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.textContent = '✕';
+            removeBtn.title = 'Удалить слой';
             removeBtn.className = 'small-button';
             removeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1532,7 +1678,9 @@
                 }
                 renderBackgroundLayers();
             });
-            item.appendChild(removeBtn);
+            actions.appendChild(removeBtn);
+
+            item.appendChild(actions);
 
             item.addEventListener('click', () => {
                 state.activeBackgroundIndex = idx;
@@ -1684,7 +1832,8 @@
         const meta = state.meta && state.meta.defaults && state.meta.defaults.backgroundParamMeta
             ? state.meta.defaults.backgroundParamMeta[layer.type] || {}
             : {};
-        renderParams(paramsContainer, backgroundParamSchema[layer.type] || {}, params, meta, null);
+        const paramDefaults = getBackgroundParamDefaults(layer.type);
+        renderParams(paramsContainer, backgroundParamSchema[layer.type] || {}, params, meta, paramDefaults);
 
         // Привязки инпутов font/text/params
         typeSelect.addEventListener('change', () => {
@@ -1897,6 +2046,7 @@
                 backgroundParamSchema[typeSelect.value] || {},
                 layer.params,
                 getBackgroundParamMeta(typeSelect.value),
+                getBackgroundParamDefaults(typeSelect.value),
             );
             fillSelect(transformSelect, [
                 { value: 'none', label: 'None' },
@@ -2196,10 +2346,10 @@
 
     function syncTextInputsFromState() {
         const t = state.textTransform || {};
-        if ($('textScale')) $('textScale').value = t.scale != null ? t.scale : 1;
-        if ($('textRotation')) $('textRotation').value = t.rotationDeg != null ? t.rotationDeg : 0;
-        if ($('textOffsetX')) $('textOffsetX').value = t.offsetX != null ? t.offsetX : 0;
-        if ($('textOffsetY')) $('textOffsetY').value = t.offsetY != null ? t.offsetY : 0;
+        if ($('textScale')) $('textScale').value = formatNumberValue(t.scale != null ? t.scale : 1);
+        if ($('textRotation')) $('textRotation').value = formatNumberValue(t.rotationDeg != null ? t.rotationDeg : 0);
+        if ($('textOffsetX')) $('textOffsetX').value = formatNumberValue(t.offsetX != null ? t.offsetX : 0);
+        if ($('textOffsetY')) $('textOffsetY').value = formatNumberValue(t.offsetY != null ? t.offsetY : 0);
     }
 
     function updateTextTransformFromInputs() {
@@ -2215,6 +2365,25 @@
         };
         updateBackgroundOverlay();
         renderPreviewLayersList();
+    }
+
+    function initTextTransformResetButtons() {
+        const configs = [
+            { buttonId: 'textScaleReset', inputId: 'textScale', value: 1 },
+            { buttonId: 'textRotationReset', inputId: 'textRotation', value: 0 },
+            { buttonId: 'textOffsetXReset', inputId: 'textOffsetX', value: 0 },
+            { buttonId: 'textOffsetYReset', inputId: 'textOffsetY', value: 0 },
+        ];
+        configs.forEach(({ buttonId, inputId, value }) => {
+            const btn = document.getElementById(buttonId);
+            const input = document.getElementById(inputId);
+            if (!btn || !input) return;
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                input.value = formatNumberValue(value);
+                updateTextTransformFromInputs();
+            });
+        });
     }
 
     function renderPreviewLayersList() {
@@ -2337,21 +2506,22 @@
         if (textDragState.mode === 'move') {
             const dx = (event.clientX - textDragState.startX) / scaleFactor;
             const dy = (event.clientY - textDragState.startY) / scaleFactor;
-            params.offsetX = textDragState.startOffsetX + dx;
-            params.offsetY = textDragState.startOffsetY + dy;
+            params.offsetX = roundToPrecision(textDragState.startOffsetX + dx);
+            params.offsetY = roundToPrecision(textDragState.startOffsetY + dy);
         } else if (textDragState.mode === 'scale') {
             const dx = event.clientX - textDragState.centerClientX;
             const dy = event.clientY - textDragState.centerClientY;
             const r = Math.sqrt(dx * dx + dy * dy) || textDragState.startRadius || 1;
             const k = r / (textDragState.startRadius || 1);
             params.scale = clampNumber(textDragState.startScale * k, 0.1, 10);
+            params.scale = roundToPrecision(params.scale);
         } else if (textDragState.mode === 'rotate') {
             const dx = event.clientX - textDragState.centerClientX;
             const dy = event.clientY - textDragState.centerClientY;
             const angle = Math.atan2(dy, dx);
             // положительный deltaDeg при движении по часовой стрелке
             const deltaDeg = (angle - textDragState.startAngle) * (180 / Math.PI);
-            params.rotationDeg = textDragState.startRotation + deltaDeg;
+            params.rotationDeg = roundToPrecision(textDragState.startRotation + deltaDeg);
         }
         state.textTransform = params;
         syncTextInputsFromState();
@@ -2464,8 +2634,9 @@
             const rangeInput = editor.querySelector(
                 `input[type="range"][data-param-key="${key}"]`,
             );
-            if (numInput) numInput.value = String(value);
-            if (rangeInput) rangeInput.value = String(value);
+            const formattedValue = formatNumberValue(value);
+            if (numInput) numInput.value = formattedValue;
+            if (rangeInput) rangeInput.value = formattedValue;
         });
     }
 
@@ -2598,8 +2769,8 @@
             const dyPx = event.clientY - backgroundDragState.startMouseY;
             const dx = dxPx / scaleFactor;
             const dy = dyPx / scaleFactor;
-            params.offsetX = backgroundDragState.startOffsetX + dx;
-            params.offsetY = backgroundDragState.startOffsetY + dy;
+            params.offsetX = roundToPrecision(backgroundDragState.startOffsetX + dx);
+            params.offsetY = roundToPrecision(backgroundDragState.startOffsetY + dy);
         } else if (mode === 'scale') {
             const cx = backgroundDragState.centerClientX;
             const cy = backgroundDragState.centerClientY;
@@ -2609,7 +2780,7 @@
             const k = r / (backgroundDragState.startRadius || 1);
             let nextScale = backgroundDragState.startScale * (Number.isFinite(k) ? k : 1);
             nextScale = clampNumber(nextScale, 0.1, 10);
-            params.scale = nextScale;
+            params.scale = roundToPrecision(nextScale);
         } else if (mode === 'rotate') {
             const cx = backgroundDragState.centerClientX;
             const cy = backgroundDragState.centerClientY;
@@ -2618,7 +2789,7 @@
             const angle = Math.atan2(dy, dx);
             const deltaRad = angle - backgroundDragState.startAngleRad;
             const deltaDeg = (deltaRad * 180) / Math.PI;
-            params.rotationDeg = backgroundDragState.startRotationDeg + deltaDeg;
+            params.rotationDeg = roundToPrecision(backgroundDragState.startRotationDeg + deltaDeg);
         }
 
         layer.params = normalizeBackgroundParams(layer.type, params);
@@ -3282,10 +3453,7 @@
             offsetX: textTransform.offsetX != null ? textTransform.offsetX : 0,
             offsetY: textTransform.offsetY != null ? textTransform.offsetY : 0,
         };
-        $('textScale').value = state.textTransform.scale;
-        $('textRotation').value = state.textTransform.rotationDeg;
-        $('textOffsetX').value = state.textTransform.offsetX;
-        $('textOffsetY').value = state.textTransform.offsetY;
+        syncTextInputsFromState();
         updateBackgroundOverlay();
         $('enabled').checked = !!wrapper.enabled;
 
@@ -3708,11 +3876,8 @@
             } else {
                 $('fontFile').value = '';
             }
-            $('textScale').value = '1';
-            $('textRotation').value = '0';
-            $('textOffsetX').value = '0';
-            $('textOffsetY').value = '0';
             state.textTransform = { scale: 1, rotationDeg: 0, offsetX: 0, offsetY: 0 };
+            syncTextInputsFromState();
             $('enabled').checked = true;
             $('transformType').value = 'none';
             $('colorType').value = 'none';
@@ -3777,6 +3942,7 @@
                 el.addEventListener('change', updateTextTransformFromInputs);
             }
         });
+        initTextTransformResetButtons();
         const fontSelectEl = $('fontFile');
         if (fontSelectEl) {
             fontSelectEl.addEventListener('change', updateFontFilePreview);

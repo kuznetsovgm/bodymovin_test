@@ -155,7 +155,15 @@
                 <h3>Позиция и размер текста</h3>
                 <div class="grid grid-3">
                   <label>
-                    Масштаб
+                    <span class="param-label-row">
+                      <span>Масштаб</span>
+                      <button
+                        id="textScaleReset"
+                        class="param-reset-btn"
+                        type="button"
+                        title="Сбросить масштаб"
+                      >↺</button>
+                    </span>
                     <input
                       id="textScale"
                       type="number"
@@ -165,15 +173,39 @@
                     />
                   </label>
                   <label>
-                    Поворот (deg)
+                    <span class="param-label-row">
+                      <span>Поворот (deg)</span>
+                      <button
+                        id="textRotationReset"
+                        class="param-reset-btn"
+                        type="button"
+                        title="Сбросить поворот"
+                      >↺</button>
+                    </span>
                     <input id="textRotation" type="number" step="1" value="0" />
                   </label>
                   <label>
-                    Смещение X
+                    <span class="param-label-row">
+                      <span>Смещение X</span>
+                      <button
+                        id="textOffsetXReset"
+                        class="param-reset-btn"
+                        type="button"
+                        title="Сбросить смещение X"
+                      >↺</button>
+                    </span>
                     <input id="textOffsetX" type="number" step="1" value="0" />
                   </label>
                   <label>
-                    Смещение Y
+                    <span class="param-label-row">
+                      <span>Смещение Y</span>
+                      <button
+                        id="textOffsetYReset"
+                        class="param-reset-btn"
+                        type="button"
+                        title="Сбросить смещение Y"
+                      >↺</button>
+                    </span>
                     <input id="textOffsetY" type="number" step="1" value="0" />
                   </label>
                 </div>
