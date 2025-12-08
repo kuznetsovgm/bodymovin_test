@@ -35,6 +35,11 @@ body {
     padding: 12px;
     display: flex;
     flex-direction: column;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    box-sizing: border-box;
 }
 
 .toolbar {
@@ -64,7 +69,9 @@ button:disabled {
 
 .variants-list {
     flex: 1;
-    overflow: hidden;
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+    overflow-x: visible;
     border-radius: 4px;
     background: #020617;
     border: 1px solid #1e293b;
@@ -74,7 +81,9 @@ button:disabled {
 
 .variants-scroll {
     max-height: 100%;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: visible;
+    position: relative;
 }
 
 .variant-item {
@@ -84,6 +93,7 @@ button:disabled {
     padding: 6px 8px;
     border-radius: 4px;
     cursor: pointer;
+    position: relative;
 }
 
 .variant-item:hover {
@@ -122,6 +132,34 @@ button:disabled {
 .variant-status.disabled {
     background: rgba(220, 38, 38, 0.15);
     color: #fecaca;
+}
+
+.variant-preview {
+    position: fixed;
+    top: 50%;
+    left: 320px;
+    transform: translateY(-50%);
+    width: 96px;
+    height: 96px;
+    border-radius: 6px;
+    background: #020617;
+    border: 1px solid #111827;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+    z-index: 100;
+    transition: opacity 0.12s ease-out;
+}
+
+.variant-preview.visible {
+    opacity: 1;
+}
+
+.variant-preview canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 .content {

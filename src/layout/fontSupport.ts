@@ -3,6 +3,7 @@ import opentype from 'opentype.js';
 type FontSupportEntry = {
     glyphSupported: Map<number, boolean>;
     hasCyrillic?: boolean;
+    codePoints?: Set<number>;
 };
 
 const fontSupportCache = new WeakMap<opentype.Font, FontSupportEntry>();
@@ -30,13 +31,46 @@ function isWhitespaceOrControl(codePoint: number): boolean {
     );
 }
 
+function ensureCodePointSet(font: opentype.Font, entry: FontSupportEntry): Set<number> {
+    if (entry.codePoints) return entry.codePoints;
+
+    const codePoints = new Set<number>();
+    const anyFont: any = font as any;
+    const total =
+        font.numGlyphs ||
+        (anyFont.glyphs && typeof anyFont.glyphs.length === 'number' && anyFont.glyphs.length) ||
+        0;
+
+    for (let i = 0; i < total; i++) {
+        const g: any = font.glyphs && typeof (font.glyphs as any).get === 'function'
+            ? (font.glyphs as any).get(i)
+            : anyFont.glyphs
+                ? anyFont.glyphs[i]
+                : null;
+        if (!g) continue;
+
+        const cps: number[] = Array.isArray(g.unicodes) && g.unicodes.length
+            ? g.unicodes
+            : g.unicode != null
+                ? [g.unicode]
+                : [];
+
+        for (const cp of cps) {
+            if (!cp || typeof cp !== 'number') continue;
+            codePoints.add(cp);
+        }
+    }
+
+    entry.codePoints = codePoints;
+    return codePoints;
+}
+
 function isGlyphSupported(font: opentype.Font, entry: FontSupportEntry, codePoint: number): boolean {
     const cached = entry.glyphSupported.get(codePoint);
     if (cached !== undefined) return cached;
 
-    const char = String.fromCodePoint(codePoint);
-    const glyphIndex = font.charToGlyphIndex(char);
-    const ok = glyphIndex > 0;
+    const codePoints = ensureCodePointSet(font, entry);
+    const ok = codePoints.has(codePoint);
     entry.glyphSupported.set(codePoint, ok);
     return ok;
 }
@@ -87,12 +121,7 @@ export function ensureFontSupportsText(font: opentype.Font, text: string): void 
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    if (containsCyrillic(trimmed) && !fontHasCyrillic(font)) {
-        throw new Error('Selected font does not support Cyrillic alphabet');
-    }
-
     if (!fontSupportsText(font, trimmed)) {
         throw new Error('Selected font does not contain all glyphs required for this text');
     }
 }
-

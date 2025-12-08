@@ -30,6 +30,14 @@
             offsetY: 0,
         },
         activeOverlayTarget: 'text',
+        variantPreview: {
+            activeId: null,
+            instance: null,
+            url: null,
+            timeoutId: null,
+            canvas: null,
+            container: null,
+        },
     };
     const MIN_DURATION_FRAMES = 2;
 
@@ -3346,6 +3354,143 @@
         renderPreviewLayersList();
     }
 
+    function clearVariantPreview() {
+        const vp = state.variantPreview;
+        if (!vp) return;
+        if (vp.timeoutId != null) {
+            clearTimeout(vp.timeoutId);
+            vp.timeoutId = null;
+        }
+        if (vp.instance && typeof vp.instance.destroy === 'function') {
+            try {
+                vp.instance.destroy();
+            } catch (err) {
+                console.error('Failed to destroy variant preview', err);
+            }
+        }
+        if (vp.url) {
+            try {
+                URL.revokeObjectURL(vp.url);
+            } catch (err) {
+                // ignore
+            }
+        }
+        if (vp.canvas && vp.canvas.getContext) {
+            try {
+                const ctx = vp.canvas.getContext('2d');
+                if (ctx) {
+                    ctx.clearRect(0, 0, vp.canvas.width, vp.canvas.height);
+                }
+            } catch (err) {
+                console.error('Failed to clear variant preview canvas', err);
+            }
+        }
+        const overlay = document.getElementById('variantPreview');
+        if (overlay && overlay.classList) {
+            overlay.classList.remove('visible');
+            overlay.innerHTML = '';
+        }
+        vp.instance = null;
+        vp.url = null;
+        vp.canvas = null;
+        vp.container = null;
+        vp.activeId = null;
+    }
+
+    function scheduleVariantPreview(wrapper, anchorEl) {
+        if (!anchorEl || !wrapper || !wrapper.id) return;
+        const vp = state.variantPreview;
+        clearVariantPreview();
+        const overlay = document.getElementById('variantPreview');
+        if (!overlay) return;
+        const rect = anchorEl.getBoundingClientRect();
+        const overlayHeight = 96;
+        const margin = 8;
+        let top = rect.top + rect.height / 2;
+        const minTop = margin + overlayHeight / 2;
+        const maxTop = window.innerHeight - margin - overlayHeight / 2;
+        if (top < minTop) top = minTop;
+        if (top > maxTop) top = maxTop;
+        overlay.style.top = top + 'px';
+        overlay.style.left = rect.right + 12 + 'px';
+        overlay.classList.add('visible');
+        vp.container = overlay;
+        vp.activeId = wrapper.id;
+        vp.timeoutId = window.setTimeout(() => {
+            vp.timeoutId = null;
+            loadVariantPreview(wrapper, overlay);
+        }, 250);
+    }
+
+    async function loadVariantPreview(wrapper, container) {
+        const vp = state.variantPreview;
+        if (!container || !wrapper || !wrapper.id || vp.activeId !== wrapper.id) return;
+        const textInput = $('previewText');
+        let text = (textInput && textInput.value) || '';
+        let trimmed = text.trim();
+        if (!trimmed) {
+            // Фолбэк, чтобы предпросмотр по hover всегда мог отрисоваться
+            text = 'Пример текста';
+            trimmed = text;
+        }
+        const DotLottie = window.DotLottie;
+        if (!DotLottie) {
+            return;
+        }
+        try {
+            container.innerHTML = '';
+            const canvas = document.createElement('canvas');
+            canvas.className = 'variant-preview-canvas';
+            container.appendChild(canvas);
+            vp.canvas = canvas;
+
+            const rect = container.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            const targetW = rect.width || 56;
+            const targetH = rect.height || 56;
+            canvas.width = targetW * dpr;
+            canvas.height = targetH * dpr;
+
+            const res = await api('./api/preview', {
+                method: 'POST',
+                body: JSON.stringify({ text: trimmed, config: wrapper.config || {} }),
+            });
+
+            if (vp.activeId !== wrapper.id) {
+                return;
+            }
+
+            const blobUrl = URL.createObjectURL(
+                new Blob([JSON.stringify(res.sticker)], { type: 'application/json' }),
+            );
+            if (vp.url) {
+                try {
+                    URL.revokeObjectURL(vp.url);
+                } catch {
+                    // ignore
+                }
+            }
+            vp.url = blobUrl;
+
+            vp.instance = new DotLottie({
+                canvas,
+                autoplay: true,
+                loop: true,
+                src: blobUrl,
+                renderConfig: {
+                    autoResize: false,
+                    devicePixelRatio: window.devicePixelRatio || 1,
+                },
+                layout: {
+                    fit: 'contain',
+                    align: [0.5, 0.5],
+                },
+            });
+        } catch (err) {
+            console.error('Failed to load hover preview', err);
+        }
+    }
+
     async function refreshVariants() {
         try {
             setStatus('Загрузка конфигураций…');
@@ -3388,6 +3533,14 @@
                 state.activeId = v.id;
                 loadConfigToForm(v);
                 renderVariants();
+            });
+
+            item.addEventListener('mouseenter', () => {
+                scheduleVariantPreview(v, item);
+            });
+
+            item.addEventListener('mouseleave', () => {
+                clearVariantPreview();
             });
 
             scrollContainer.appendChild(item);
@@ -3503,6 +3656,15 @@
         const frameRateSelect = $('frameRate');
         const durationSlider = $('durationSlider');
         const durationInput = $('duration');
+
+        // Глобальное плавающее окно предпросмотра варианта
+        let overlay = document.getElementById('variantPreview');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'variantPreview';
+            overlay.className = 'variant-preview';
+            document.body.appendChild(overlay);
+        }
 
         initBackgroundOverlay();
 
