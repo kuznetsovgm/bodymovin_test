@@ -240,7 +240,11 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathna
 
 async function handleGetConfigs(res: http.ServerResponse) {
     const configs = await stickerConfigManager.getAllConfigs();
-    sendJson(res, 200, { configs });
+    const serialized = configs.map((item) => ({
+        ...item,
+        name: item.meta && item.meta.name ? item.meta.name : null,
+    }));
+    sendJson(res, 200, { configs: serialized });
 }
 
 async function handleCreateConfig(req: JsonRequest, res: http.ServerResponse) {
@@ -248,12 +252,14 @@ async function handleCreateConfig(req: JsonRequest, res: http.ServerResponse) {
         const body = await parseBody(req);
         const config = body.config as Omit<GenerateStickerOptions, 'text'>;
         const enabled = body.enabled !== undefined ? !!body.enabled : true;
+        const rawName = typeof body.name === 'string' ? body.name.trim() : '';
+        const meta = rawName ? { name: rawName } : undefined;
         if (!config || typeof config !== 'object') {
             sendJson(res, 400, { error: 'Invalid config payload' });
             return;
         }
 
-        const id = await stickerConfigManager.saveConfig(config, enabled);
+        const id = await stickerConfigManager.saveConfig(config, enabled, meta);
         const isEnabled = await stickerConfigManager.isEnabled(id);
         sendJson(res, 201, { id, enabled: isEnabled });
     } catch (err: any) {
@@ -268,19 +274,26 @@ async function handleUpdateConfig(req: JsonRequest, res: http.ServerResponse, co
         const config = body.config as Omit<GenerateStickerOptions, 'text'>;
         const enabled =
             body.enabled !== undefined ? !!body.enabled : await stickerConfigManager.isEnabled(configId);
+        const hasNameField = Object.prototype.hasOwnProperty.call(body, 'name');
+        const rawName = typeof body.name === 'string' ? body.name.trim() : '';
 
         if (!config || typeof config !== 'object') {
             sendJson(res, 400, { error: 'Invalid config payload' });
             return;
         }
 
-        const existing = await stickerConfigManager.getConfig(configId);
+        const existing = await stickerConfigManager.getConfigRecord(configId);
         if (!existing) {
             sendJson(res, 404, { error: 'Configuration not found' });
             return;
         }
 
-        const newId = await stickerConfigManager.saveConfig(config, enabled);
+        let meta = existing.meta;
+        if (hasNameField) {
+            meta = rawName ? { name: rawName } : undefined;
+        }
+
+        const newId = await stickerConfigManager.saveConfig(config, enabled, meta);
 
         if (newId !== configId) {
             await stickerConfigManager.deleteConfig(configId);

@@ -2,6 +2,15 @@ import Redis from 'ioredis';
 import * as crypto from 'crypto';
 import { GenerateStickerOptions } from './index';
 
+export type StickerConfigMeta = {
+    name?: string;
+};
+
+export type StickerConfigRecord = {
+    config: Omit<GenerateStickerOptions, 'text'>;
+    meta?: StickerConfigMeta;
+};
+
 export const STICKER_CONFIG_SCORE_ZSET_KEY = 'sticker:config:score';
 
 const CONFIG_PREFIX = 'config:';
@@ -78,6 +87,47 @@ export class StickerConfigManager {
         return sanitized as Omit<GenerateStickerOptions, 'text'>;
     }
 
+    private sanitizeMeta(meta?: StickerConfigMeta | null): StickerConfigMeta | undefined {
+        if (!meta) {
+            return undefined;
+        }
+        const sanitized: StickerConfigMeta = {};
+        if (typeof meta.name === 'string') {
+            const trimmed = meta.name.trim();
+            if (trimmed) {
+                sanitized.name = trimmed;
+            }
+        }
+        return Object.keys(sanitized).length ? sanitized : undefined;
+    }
+
+    private parseStoredConfig(configJson: string | null): StickerConfigRecord | null {
+        if (!configJson) {
+            return null;
+        }
+
+        let parsed: any;
+        try {
+            parsed = JSON.parse(configJson);
+        } catch (error) {
+            console.error('Error parsing stored config:', error);
+            return null;
+        }
+
+        if (parsed && typeof parsed === 'object' && parsed.config) {
+            const configData =
+                parsed.config && typeof parsed.config === 'object' ? parsed.config : {};
+            const sanitizedConfig = this.sanitizeConfig(configData as Omit<GenerateStickerOptions, 'text'>);
+            const sanitizedMeta = this.sanitizeMeta(parsed.meta);
+            return sanitizedMeta ? { config: sanitizedConfig, meta: sanitizedMeta } : { config: sanitizedConfig };
+        }
+
+        const sanitizedConfig = this.sanitizeConfig(
+            (parsed && typeof parsed === 'object' ? parsed : {}) as Omit<GenerateStickerOptions, 'text'>,
+        );
+        return { config: sanitizedConfig };
+    }
+
     /**
      * Generate unique ID for a sticker configuration
      */
@@ -91,15 +141,21 @@ export class StickerConfigManager {
      */
     async saveConfig(
         config: Omit<GenerateStickerOptions, 'text'>,
-        enabled: boolean = true
+        enabled: boolean = true,
+        meta?: StickerConfigMeta,
     ): Promise<string> {
         try {
             const sanitizedConfig = this.sanitizeConfig(config);
             const configId = this.generateConfigId(sanitizedConfig);
             const key = `${CONFIG_PREFIX}${configId}`;
+            const payload: StickerConfigRecord = { config: sanitizedConfig };
+            const sanitizedMeta = this.sanitizeMeta(meta);
+            if (sanitizedMeta) {
+                payload.meta = sanitizedMeta;
+            }
 
             // Save config as JSON
-            await this.redis.set(key, JSON.stringify(sanitizedConfig));
+            await this.redis.set(key, JSON.stringify(payload));
 
             // Keep enabled set in sync with desired status
             if (enabled) {
@@ -135,17 +191,26 @@ export class StickerConfigManager {
     /**
      * Get a specific configuration by ID
      */
-    async getConfig(configId: string): Promise<Omit<GenerateStickerOptions, 'text'> | null> {
+    async getConfigRecord(configId: string): Promise<StickerConfigRecord | null> {
         try {
             const key = `${CONFIG_PREFIX}${configId}`;
             const configJson = await this.redis.get(key);
 
-            if (!configJson) {
+            return this.parseStoredConfig(configJson);
+        } catch (error) {
+            console.error('Error getting config:', error);
+            return null;
+        }
+    }
+
+    async getConfig(configId: string): Promise<Omit<GenerateStickerOptions, 'text'> | null> {
+        try {
+            const record = await this.getConfigRecord(configId);
+            if (!record) {
                 return null;
             }
 
-            const parsed = JSON.parse(configJson);
-            return this.sanitizeConfig(parsed);
+            return record.config;
         } catch (error) {
             console.error('Error getting config:', error);
             return null;
@@ -158,6 +223,7 @@ export class StickerConfigManager {
     async getEnabledConfigs(): Promise<Array<{
         id: string;
         config: Omit<GenerateStickerOptions, 'text'>;
+        meta?: StickerConfigMeta;
     }>> {
         try {
             const enabledIds = await this.redis.smembers(CONFIG_ENABLED_SET);
@@ -193,12 +259,13 @@ export class StickerConfigManager {
             const results: Array<{
                 id: string;
                 config: Omit<GenerateStickerOptions, 'text'>;
+                meta?: StickerConfigMeta;
             }> = [];
 
             for (const configId of orderedIds) {
-                const config = await this.getConfig(configId);
-                if (config) {
-                    results.push({ id: configId, config });
+                const record = await this.getConfigRecord(configId);
+                if (record) {
+                    results.push({ id: configId, config: record.config, meta: record.meta });
                 }
             }
 
@@ -216,6 +283,7 @@ export class StickerConfigManager {
         id: string;
         config: Omit<GenerateStickerOptions, 'text'>;
         enabled: boolean;
+        meta?: StickerConfigMeta;
     }>> {
         try {
             const pattern = `${CONFIG_PREFIX}*`;
@@ -231,6 +299,7 @@ export class StickerConfigManager {
                 id: string;
                 config: Omit<GenerateStickerOptions, 'text'>;
                 enabled: boolean;
+                meta?: StickerConfigMeta;
             }> = [];
 
             for (const key of keys) {
@@ -238,11 +307,15 @@ export class StickerConfigManager {
                 const configJson = await this.redis.get(key);
 
                 if (configJson) {
-                    const config = this.sanitizeConfig(JSON.parse(configJson));
+                    const record = this.parseStoredConfig(configJson);
+                    if (!record) {
+                        continue;
+                    }
                     results.push({
                         id: configId,
-                        config,
+                        config: record.config,
                         enabled: enabledIds.has(configId),
+                        meta: record.meta,
                     });
                 }
             }

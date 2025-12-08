@@ -3257,6 +3257,14 @@
 
     function loadConfigToForm(wrapper) {
         const cfg = wrapper.config || {};
+        const nameInput = $('variantName');
+        if (nameInput) {
+            const nameFromWrapper =
+                (typeof wrapper.name === 'string' && wrapper.name.trim()) ||
+                (wrapper.meta && typeof wrapper.meta.name === 'string' && wrapper.meta.name.trim()) ||
+                '';
+            nameInput.value = nameFromWrapper || '';
+        }
         $('frameRate').value = cfg.frameRate === 30 ? '30' : '60';
         updateDurationRange();
         if (cfg.duration != null) {
@@ -3515,7 +3523,12 @@
             const title = document.createElement('div');
             title.className = 'variant-title';
             const label = document.createElement('span');
-            label.textContent = `Вариант ${idx + 1}`;
+            label.className = 'variant-name';
+            const variantName =
+                (typeof v.name === 'string' && v.name.trim()) ||
+                (v.meta && typeof v.meta.name === 'string' && v.meta.name.trim()) ||
+                '';
+            label.textContent = variantName || `Вариант ${idx + 1}`;
             const id = document.createElement('span');
             id.className = 'variant-id';
             id.textContent = v.id;
@@ -3552,18 +3565,24 @@
             const cfg = getCurrentConfig();
             const enabled = $('enabled').checked;
             const isNew = !state.activeId;
+            const nameInput = $('variantName');
+            const variantName = nameInput ? nameInput.value.trim() : '';
+            const payload = { config: cfg, enabled };
+            if (nameInput) {
+                payload.name = variantName;
+            }
             setStatus('Сохранение…');
 
             if (isNew) {
                 const res = await api('./api/configs', {
                     method: 'POST',
-                    body: JSON.stringify({ config: cfg, enabled }),
+                    body: JSON.stringify(payload),
                 });
                 state.activeId = res.id;
             } else {
                 const res = await api(`./api/configs/${encodeURIComponent(state.activeId)}`, {
                     method: 'PUT',
-                    body: JSON.stringify({ config: cfg, enabled }),
+                    body: JSON.stringify(payload),
                 });
                 state.activeId = res.id;
             }
@@ -3673,6 +3692,10 @@
             $('width').value = '';
             $('height').value = '';
             $('fontSize').value = '';
+            const nameInput = $('variantName');
+            if (nameInput) {
+                nameInput.value = '';
+            }
             const defaultFps =
                 state.meta && state.meta.defaults && state.meta.defaults.frameRate === 30 ? '30' : '60';
             frameRateSelect.value = defaultFps;

@@ -109,6 +109,11 @@ button:disabled {
     flex-direction: column;
 }
 
+.variant-name {
+    font-weight: 600;
+    color: #f8fafc;
+}
+
 .variant-id {
     font-size: 10px;
     color: #9ca3af;
