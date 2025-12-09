@@ -2873,9 +2873,17 @@
         const fontRow = document.createElement('div');
         fontRow.className = 'grid grid-3';
         const fontLabel = document.createElement('label');
-        fontLabel.textContent = 'fontFile (для паттернов)';
+        fontLabel.textContent = 'fontFile (паттерн/TextLike)';
         const fontInput = document.createElement('select');
-        const fontOptions = (state.meta && (state.meta.glyphFonts || state.meta.fonts)) || [];
+        const glyphFontOptions = (state.meta && state.meta.glyphFonts) || [];
+        const regularFontOptions = (state.meta && state.meta.fonts) || [];
+        const combinedFontOptions = regularFontOptions.concat(
+            glyphFontOptions.filter((name) => !regularFontOptions.includes(name)),
+        );
+        const fontOptions =
+            layer.type === 'textLike'
+                ? (regularFontOptions.length ? regularFontOptions : combinedFontOptions)
+                : (glyphFontOptions.length ? glyphFontOptions : combinedFontOptions);
         const emptyOpt = document.createElement('option');
         emptyOpt.value = '';
         emptyOpt.textContent = '—';
@@ -2886,7 +2894,14 @@
             opt.textContent = name;
             fontInput.appendChild(opt);
         });
-        fontInput.value = layer.fontFile || '';
+        const selectedFontValue = layer.fontFile || '';
+        if (selectedFontValue && !fontOptions.includes(selectedFontValue)) {
+            const opt = document.createElement('option');
+            opt.value = selectedFontValue;
+            opt.textContent = selectedFontValue;
+            fontInput.appendChild(opt);
+        }
+        fontInput.value = selectedFontValue;
         fontInput.disabled = layer.type !== 'glyphPattern' && layer.type !== 'textLike';
         fontLabel.appendChild(fontInput);
 
