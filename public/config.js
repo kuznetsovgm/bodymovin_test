@@ -39,6 +39,7 @@
             container: null,
         },
         localColorPalette: [],
+        localColorSets: [],
         localPaletteLoaded: false,
         autoPreview: false,
     };
@@ -882,37 +883,50 @@
     function ensureLocalPaletteLoaded() {
         if (state.localPaletteLoaded) return;
         state.localPaletteLoaded = true;
+        let colors = [];
+        let localSets = [];
         try {
-            if (typeof window === 'undefined' || !window.localStorage) {
-                state.localColorPalette = [];
-                return;
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const raw = window.localStorage.getItem(LOCAL_PALETTE_STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        colors = parsed;
+                    } else if (parsed && typeof parsed === 'object') {
+                        if (Array.isArray(parsed.colors)) {
+                            colors = parsed.colors;
+                        }
+                        if (Array.isArray(parsed.sets)) {
+                            localSets = parsed.sets;
+                        }
+                    }
+                }
             }
-            const raw = window.localStorage.getItem(LOCAL_PALETTE_STORAGE_KEY);
-            if (!raw) {
-                state.localColorPalette = [];
-                return;
-            }
-            const parsed = JSON.parse(raw);
-            if (!Array.isArray(parsed)) {
-                state.localColorPalette = [];
-                return;
-            }
-            state.localColorPalette = parsed
-                .map((item) => normalizeRgba(item))
-                .filter((color) => Array.isArray(color));
         } catch (err) {
             console.warn('Failed to load local palette', err);
-            state.localColorPalette = [];
         }
+
+        state.localColorPalette = (colors || [])
+            .map((item) => normalizeRgba(item))
+            .filter((color) => Array.isArray(color));
+        state.localColorSets = Array.isArray(localSets)
+            ? localSets.map((entry) => normalizeLocalColorSetEntry(entry)).filter(Boolean)
+            : [];
     }
 
     function saveLocalPalette() {
         try {
             if (typeof window === 'undefined' || !window.localStorage) return;
-            window.localStorage.setItem(
-                LOCAL_PALETTE_STORAGE_KEY,
-                JSON.stringify(state.localColorPalette || []),
-            );
+            const payload = {
+                colors: (state.localColorPalette || []).map((color) => [...color]),
+                sets: (state.localColorSets || []).map((entry) => ({
+                    id: entry.id,
+                    name: entry.name,
+                    config: entry.config,
+                    hash: entry.hash,
+                })),
+            };
+            window.localStorage.setItem(LOCAL_PALETTE_STORAGE_KEY, JSON.stringify(payload));
         } catch (err) {
             console.warn('Failed to save local palette', err);
         }
@@ -943,6 +957,123 @@
         if (idx === -1) return false;
         palette.splice(idx, 1);
         state.localColorPalette = [...palette];
+        saveLocalPalette();
+        return true;
+    }
+
+    function normalizeColorSetConfig(config) {
+        if (!config || typeof config !== 'object') return null;
+        const colors = Array.isArray(config.colors)
+            ? config.colors.map((rgba) => normalizeRgba(rgba)).filter(Boolean)
+            : [];
+        if (!colors.length) return null;
+        const times = Array.isArray(config.times)
+            ? config.times.map((t, idx) => {
+                  if (typeof t === 'number' && Number.isFinite(t)) return clamp01(t);
+                  return colors.length > 1 ? idx / (colors.length - 1) : 0;
+              })
+            : colors.map((_, idx) => (colors.length > 1 ? idx / (colors.length - 1) : 0));
+        const result = {
+            colors,
+            times,
+        };
+        if (typeof config.loop === 'boolean') result.loop = config.loop;
+        if (typeof config.windowFraction === 'number' && Number.isFinite(config.windowFraction)) {
+            result.windowFraction = clamp01(config.windowFraction);
+        }
+        if (typeof config.reverse === 'boolean') result.reverse = config.reverse;
+        if (typeof config.strokeWidth === 'number' && Number.isFinite(config.strokeWidth)) {
+            result.strokeWidth = config.strokeWidth;
+        }
+        return result;
+    }
+
+    function computeColorSetHash(config) {
+        if (!config) return '';
+        return JSON.stringify({
+            colors: (config.colors || []).map((rgba) =>
+                (normalizeRgba(rgba) || [0, 0, 0, 1]).map((value) =>
+                    Math.round(clamp01(value) * 1000) / 1000,
+                ),
+            ),
+            times: (config.times || []).map((t) =>
+                Math.round(clamp01(typeof t === 'number' ? t : 0) * 1000) / 1000,
+            ),
+            loop: !!config.loop,
+            windowFraction:
+                typeof config.windowFraction === 'number' && Number.isFinite(config.windowFraction)
+                    ? Math.round(config.windowFraction * 1000) / 1000
+                    : undefined,
+            reverse: !!config.reverse,
+            strokeWidth:
+                typeof config.strokeWidth === 'number' && Number.isFinite(config.strokeWidth)
+                    ? Math.round(config.strokeWidth * 1000) / 1000
+                    : undefined,
+        });
+    }
+
+    function normalizeLocalColorSetEntry(entry) {
+        if (!entry || typeof entry !== 'object') return null;
+        const config = normalizeColorSetConfig(entry.config || entry);
+        if (!config) return null;
+        const normalized = {
+            id:
+                typeof entry.id === 'string' && entry.id.trim()
+                    ? entry.id
+                    : `localSet_${Date.now()}_${Math.round(Math.random() * 1000)}`,
+            name:
+                typeof entry.name === 'string' && entry.name.trim()
+                    ? entry.name.trim()
+                    : typeof entry.label === 'string' && entry.label.trim()
+                    ? entry.label.trim()
+                    : '',
+            config,
+            hash: typeof entry.hash === 'string' && entry.hash ? entry.hash : computeColorSetHash(config),
+        };
+        return normalized;
+    }
+
+    function getLocalColorSetPresets() {
+        ensureLocalPaletteLoaded();
+        const list = Array.isArray(state.localColorSets) ? state.localColorSets : [];
+        return list.map((entry, idx) => ({
+            id: entry.id || `localSet_${idx}`,
+            label: entry.name || `Набор ${idx + 1}`,
+            config: deepCopy(entry.config || {}),
+            hash: entry.hash || computeColorSetHash(entry.config || {}),
+        }));
+    }
+
+    function addColorSetToLocalPalette(config, name) {
+        ensureLocalPaletteLoaded();
+        const sanitized = normalizeColorSetConfig(config);
+        if (!sanitized) {
+            return { success: false, message: 'Нет корректных цветов для сохранения' };
+        }
+        const hash = computeColorSetHash(sanitized);
+        const list = Array.isArray(state.localColorSets) ? [...state.localColorSets] : [];
+        if (list.some((entry) => entry.hash === hash)) {
+            return { success: false, message: 'Такой набор уже сохранён' };
+        }
+        const entry = {
+            id: `localSet_${Date.now()}_${Math.round(Math.random() * 1000)}`,
+            name: name && name.trim() ? name.trim() : '',
+            config: sanitized,
+            hash,
+        };
+        list.push(entry);
+        state.localColorSets = list;
+        saveLocalPalette();
+        return { success: true };
+    }
+
+    function removeColorSetFromLocalPalette(entryId) {
+        ensureLocalPaletteLoaded();
+        const list = Array.isArray(state.localColorSets) ? [...state.localColorSets] : [];
+        const idx = list.findIndex((entry) => entry.id === entryId);
+        if (idx === -1) return false;
+        list.splice(idx, 1);
+        state.localColorSets = list;
         saveLocalPalette();
         return true;
     }
@@ -1090,18 +1221,20 @@
             title.className = 'color-palette-title';
             title.textContent = category.title;
             header.appendChild(title);
-            if (category.allowAdd && (onAddLocal || onAddLocalFromPicker)) {
+            const categoryAddHandler = category.onAdd || onAddLocal;
+            const categoryPickerHandler = category.onAddFromPicker || onAddLocalFromPicker;
+            if (category.allowAdd && (categoryAddHandler || categoryPickerHandler)) {
                 const actions = document.createElement('div');
                 actions.className = 'color-palette-actions';
-                if (onAddLocal) {
+                if (categoryAddHandler) {
                     const addBtn = document.createElement('button');
                     addBtn.type = 'button';
                     addBtn.className = 'small-button';
                     addBtn.textContent = category.addButtonLabel || 'Добавить цвет';
-                    addBtn.addEventListener('click', onAddLocal);
+                    addBtn.addEventListener('click', categoryAddHandler);
                     actions.appendChild(addBtn);
                 }
-                if (onAddLocalFromPicker) {
+                if (categoryPickerHandler) {
                     const pickerBtn = document.createElement('button');
                     pickerBtn.type = 'button';
                     pickerBtn.className = 'small-button secondary';
@@ -1114,7 +1247,7 @@
                     hiddenInput.tabIndex = -1;
                     hiddenInput.addEventListener('change', () => {
                         if (!hiddenInput.value) return;
-                        onAddLocalFromPicker(hiddenInput.value);
+                        categoryPickerHandler(hiddenInput.value);
                     });
                     pickerBtn.addEventListener('click', (event) => {
                         event.preventDefault();
@@ -1148,7 +1281,8 @@
                     btn.appendChild(preview);
                     btn.appendChild(label);
 
-                    if (item.removable && onRemoveLocal) {
+                    const removeHandler = category.onRemove || onRemoveLocal;
+                    if (item.removable && removeHandler) {
                         btn.classList.add('color-swatch-removable');
                         const removeBtn = document.createElement('span');
                         removeBtn.className = 'color-swatch-remove';
@@ -1156,7 +1290,7 @@
                         removeBtn.title = 'Удалить из локальной палитры';
                         removeBtn.addEventListener('click', (event) => {
                             event.stopPropagation();
-                            onRemoveLocal(item);
+                            removeHandler(item);
                         });
                         btn.appendChild(removeBtn);
                     }
@@ -1238,6 +1372,16 @@
         const [r, g, b, a = 1] = color;
         const to255 = (v) => Math.round(clamp01(v) * 255);
         return `rgba(${to255(r)}, ${to255(g)}, ${to255(b)}, ${clamp01(a).toFixed(2)})`;
+    }
+
+    function buildGradientPreview(colors) {
+        if (!Array.isArray(colors) || !colors.length) {
+            return '#1f2937';
+        }
+        if (colors.length === 1) {
+            return rgbaToCss(colors[0]);
+        }
+        return `linear-gradient(90deg, ${colors.map((rgba) => rgbaToCss(rgba)).join(', ')})`;
     }
 
     function roundToPrecision(val, precision = 2) {
@@ -1821,18 +1965,12 @@
             });
             presets.forEach((preset) => {
                 const colors = (preset.config && preset.config.colors) || [];
-                let gradient = '#1f2937';
-                if (colors.length > 1) {
-                    gradient = `linear-gradient(90deg, ${colors.map((rgba) => rgbaToCss(rgba)).join(', ')})`;
-                } else if (colors.length === 1) {
-                    gradient = rgbaToCss(colors[0]);
-                }
                 presetItems.push({
                     type: 'preset',
                     label: preset.label,
                     tooltip: preset.label,
                     preset,
-                    gradient,
+                    gradient: buildGradientPreview(colors),
                     key: preset.id,
                     dedupeKey: `preset:${preset.id}`,
                 });
@@ -1847,14 +1985,101 @@
                 removable: true,
             }));
 
+            const localSetPresets = getLocalColorSetPresets();
+            const localSetItems = localSetPresets.map((preset) => ({
+                type: 'preset',
+                label: preset.label,
+                tooltip: preset.label,
+                preset,
+                gradient: buildGradientPreview((preset.config && preset.config.colors) || []),
+                key: preset.id,
+                removable: true,
+                dedupeKey: `localSet:${preset.id}`,
+            }));
+
+            const handleAddLocalColor = () => {
+                const current = getActiveColorRgba();
+                if (!current) {
+                    setStatus('Выберите ключ цвета', true);
+                    return;
+                }
+                const added = addColorToLocalPalette(current);
+                if (!added) {
+                    setStatus('Цвет уже есть в локальной палитре');
+                } else {
+                    setStatus('Цвет добавлен в локальную палитру');
+                }
+                updatePalette();
+            };
+
+            const handleAddLocalColorFromPicker = (hex) => {
+                const rgba = parseHexToNormalizedRgba(hex, 1);
+                if (!rgba) return;
+                const added = addColorToLocalPalette(rgba);
+                if (!added) {
+                    setStatus('Цвет уже есть в локальной палитре');
+                } else {
+                    setStatus('Цвет добавлен в локальную палитру');
+                }
+                applyPaletteColor(rgba);
+                updatePalette();
+            };
+
+            const handleRemoveLocalColor = (item) => {
+                const key = (item && item.key) || (item && item.rgba && item.rgba.join(','));
+                if (!key) return;
+                removeColorFromLocalPalette(key);
+                updatePalette();
+            };
+
+            const handleAddLocalSet = () => {
+                const current = getCurrentValues();
+                if (!current || !Array.isArray(current.colors) || !current.colors.length) {
+                    setStatus('Нет цветов для сохранения', true);
+                    return;
+                }
+                let desiredName = '';
+                if (typeof window !== 'undefined' && window.prompt) {
+                    const defaultName = `Набор ${localSetItems.length + 1}`;
+                    const promptValue = window.prompt('Название набора', defaultName);
+                    if (promptValue === null) return;
+                    desiredName = promptValue.trim();
+                }
+                const result = addColorSetToLocalPalette(current, desiredName);
+                if (result.success) {
+                    setStatus('Набор сохранён');
+                } else {
+                    setStatus(result.message || 'Не удалось сохранить набор', true);
+                }
+                updatePalette();
+            };
+
+            const handleRemoveLocalSet = (item) => {
+                const key = item && item.key;
+                if (!key) return;
+                removeColorSetFromLocalPalette(key);
+                updatePalette();
+            };
+
             const categories = [
                 { title: 'Предустановленные цвета', items: presetItems },
+                {
+                    title: 'Локальные наборы',
+                    items: localSetItems,
+                    allowAdd: true,
+                    addButtonLabel: 'Сохранить набор',
+                    onAdd: handleAddLocalSet,
+                    onRemove: handleRemoveLocalSet,
+                },
                 {
                     title: 'Локальная палитра',
                     items: localColors,
                     allowAdd: true,
                     addButtonLabel: 'Добавить текущий цвет',
                     addPickerButtonLabel: 'Выбрать цвет',
+                    onAdd: handleAddLocalColor,
+                    onAddFromPicker: handleAddLocalColorFromPicker,
+                    onRemove: handleRemoveLocalColor,
                 },
                 { title: 'Палитра варианта', items: usedColors },
             ];
@@ -1866,37 +2091,6 @@
                     const presetCfg = clonePresetConfig(preset, options.isStroke);
                     renderColorParams(container, type, presetCfg, options);
                     setStatus('Пресет применён');
-                },
-                onRemoveLocal: (item) => {
-                    const key = (item && item.key) || (item && item.rgba && item.rgba.join(','));
-                    if (!key) return;
-                    removeColorFromLocalPalette(key);
-                    updatePalette();
-                },
-                onAddLocal: () => {
-                    const current = getActiveColorRgba();
-                    if (!current) {
-                        setStatus('Выберите ключ цвета', true);
-                        return;
-                    }
-                    const added = addColorToLocalPalette(current);
-                    if (!added) {
-                        setStatus('Цвет уже есть в локальной палитре');
-                    } else {
-                        setStatus('Цвет добавлен в локальную палитру');
-                    }
-                    updatePalette();
-                },
-                onAddLocalFromPicker: (hex) => {
-                    const rgba = parseHexToNormalizedRgba(hex, 1);
-                    if (!rgba) return;
-                    const added = addColorToLocalPalette(rgba);
-                    if (!added) {
-                        setStatus('Цвет уже есть в локальной палитре');
-                    } else {
-                        setStatus('Цвет добавлен в локальную палитру');
-                    }
-                    applyPaletteColor(rgba);
                 },
             });
             paletteMount.innerHTML = '';
