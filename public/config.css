@@ -104,6 +104,45 @@ button:disabled {
     background: #0f766e;
 }
 
+.variant-item.dragging {
+    opacity: 0.5;
+}
+
+.variant-item.drop-before::before,
+.variant-item.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    height: 0;
+    border-top: 2px solid #38bdf8;
+}
+
+.variant-item.drop-before::before {
+    top: 0;
+}
+
+.variant-item.drop-after::after {
+    bottom: 0;
+}
+
+.variant-item .variant-drag-handle {
+    width: 10px;
+    margin-right: 6px;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: #4b5563;
+    cursor: grab;
+    user-select: none;
+}
+
+.variant-item .variant-drag-handle::before {
+    content: '⋮⋮';
+    font-size: 10px;
+}
+
 .variant-title {
     display: flex;
     flex-direction: column;

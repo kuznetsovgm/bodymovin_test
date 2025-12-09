@@ -4524,6 +4524,29 @@
         }
     }
 
+    function getEnabledVariants() {
+        return (state.variants || []).filter((v) => v && v.enabled);
+    }
+
+    function getDisabledVariants() {
+        return (state.variants || []).filter((v) => v && !v.enabled);
+    }
+
+    async function saveEnabledOrder() {
+        try {
+            const enabledVariants = getEnabledVariants();
+            const order = enabledVariants.map((v) => v.id);
+            await api('./api/configs/order', {
+                method: 'POST',
+                body: JSON.stringify({ enabledOrder: order }),
+            });
+            setStatus('Порядок включённых вариантов сохранён');
+        } catch (err) {
+            console.error('Failed to save enabled order', err);
+            setStatus('Не удалось сохранить порядок вариантов', true);
+        }
+    }
+
     async function refreshVariants() {
         try {
             setStatus('Загрузка конфигураций…');
@@ -4541,12 +4564,62 @@
         const container = $('variantsList');
         const scrollContainer = container.querySelector('.variants-scroll') || container;
         scrollContainer.innerHTML = '';
-        state.variants.forEach((v, idx) => {
+        const enabledVariants = getEnabledVariants();
+        const disabledVariants = getDisabledVariants();
+        const ordered = enabledVariants.concat(disabledVariants);
+
+        let draggingId = null;
+
+        function clearDropMarkers() {
+            const items = scrollContainer.querySelectorAll('.variant-item.drop-before, .variant-item.drop-after');
+            items.forEach((el) => {
+                el.classList.remove('drop-before');
+                el.classList.remove('drop-after');
+            });
+        }
+
+        function reorderEnabledVariants(sourceId, targetId, placeAfter) {
+            const enabled = getEnabledVariants();
+            const disabled = getDisabledVariants();
+            const sourceIndex = enabled.findIndex((v) => v.id === sourceId);
+            const targetIndex = enabled.findIndex((v) => v.id === targetId);
+            if (sourceIndex === -1 || targetIndex === -1 || sourceId === targetId) {
+                return;
+            }
+
+            const updatedEnabled = enabled.slice();
+            const [moved] = updatedEnabled.splice(sourceIndex, 1);
+            let insertIndex = targetIndex;
+            if (sourceIndex < targetIndex) {
+                insertIndex = targetIndex - 1;
+            }
+            if (placeAfter) {
+                insertIndex += 1;
+            }
+            if (insertIndex < 0) insertIndex = 0;
+            if (insertIndex > updatedEnabled.length) insertIndex = updatedEnabled.length;
+            updatedEnabled.splice(insertIndex, 0, moved);
+
+            state.variants = updatedEnabled.concat(disabled);
+            renderVariants();
+            saveEnabledOrder();
+        }
+
+        ordered.forEach((v, idx) => {
             const item = document.createElement('div');
             item.className = 'variant-item' + (v.id === state.activeId ? ' active' : '');
+            item.dataset.variantId = v.id;
+            item.dataset.enabled = v.enabled ? '1' : '0';
 
             const title = document.createElement('div');
             title.className = 'variant-title';
+
+            if (v.enabled) {
+                const dragHandle = document.createElement('span');
+                dragHandle.className = 'variant-drag-handle';
+                title.appendChild(dragHandle);
+            }
+
             const label = document.createElement('span');
             label.className = 'variant-name';
             const variantName =
@@ -4580,6 +4653,68 @@
             item.addEventListener('mouseleave', () => {
                 clearVariantPreview();
             });
+
+            if (v.enabled) {
+                item.draggable = true;
+                item.addEventListener('dragstart', (event) => {
+                    draggingId = v.id;
+                    item.classList.add('dragging');
+                    clearDropMarkers();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', v.id);
+                    }
+                });
+                item.addEventListener('dragend', () => {
+                    draggingId = null;
+                    item.classList.remove('dragging');
+                    clearDropMarkers();
+                });
+                item.addEventListener('dragover', (event) => {
+                    if (!draggingId || draggingId === v.id) {
+                        return;
+                    }
+                    const isEnabledTarget = item.dataset.enabled === '1';
+                    if (!isEnabledTarget) {
+                        return;
+                    }
+                    event.preventDefault();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = 'move';
+                    }
+                    clearDropMarkers();
+                    const rect = item.getBoundingClientRect();
+                    const offsetY = event.clientY - rect.top;
+                    const placeAfter = offsetY > rect.height / 2;
+                    if (placeAfter) {
+                        item.classList.add('drop-after');
+                    } else {
+                        item.classList.add('drop-before');
+                    }
+                });
+                item.addEventListener('dragleave', () => {
+                    item.classList.remove('drop-before');
+                    item.classList.remove('drop-after');
+                });
+                item.addEventListener('drop', (event) => {
+                    if (!draggingId || draggingId === v.id) {
+                        return;
+                    }
+                    const isEnabledTarget = item.dataset.enabled === '1';
+                    if (!isEnabledTarget) {
+                        return;
+                    }
+                    event.preventDefault();
+                    const rect = item.getBoundingClientRect();
+                    const offsetY = event.clientY - rect.top;
+                    const placeAfter = offsetY > rect.height / 2;
+                    clearDropMarkers();
+                    const sourceId = draggingId;
+                    const targetId = v.id;
+                    draggingId = null;
+                    reorderEnabledVariants(sourceId, targetId, placeAfter);
+                });
+            }
 
             scrollContainer.appendChild(item);
         });

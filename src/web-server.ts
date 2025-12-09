@@ -334,6 +334,25 @@ async function handleDeleteConfig(res: http.ServerResponse, configId: string) {
     sendJson(res, 200, { id: configId, deleted: true });
 }
 
+async function handleUpdateConfigOrder(req: JsonRequest, res: http.ServerResponse) {
+    try {
+        const body = await parseBody(req);
+        const rawOrder = body && body.enabledOrder;
+
+        if (!Array.isArray(rawOrder)) {
+            sendJson(res, 400, { error: 'enabledOrder must be an array of IDs' });
+            return;
+        }
+
+        const order = rawOrder.filter((id: unknown) => typeof id === 'string') as string[];
+        await stickerConfigManager.setEnabledConfigOrder(order);
+        sendJson(res, 200, { ok: true });
+    } catch (err) {
+        console.error('Error updating config order:', err);
+        sendJson(res, 500, { error: 'Failed to update config order' });
+    }
+}
+
 async function handlePreview(req: JsonRequest, res: http.ServerResponse) {
     try {
         const body = await parseBody(req);
@@ -780,6 +799,10 @@ const server = http.createServer(async (req: JsonRequest, res) => {
             }
             if (relativePath === '/api/configs' && method === 'POST') {
                 await handleCreateConfig(req, res);
+                return;
+            }
+            if (relativePath === '/api/configs/order' && method === 'POST') {
+                await handleUpdateConfigOrder(req, res);
                 return;
             }
             if (relativePath === '/api/meta' && method === 'GET') {
