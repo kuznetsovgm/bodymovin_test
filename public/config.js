@@ -1961,17 +1961,40 @@
                 timeInput.max = '1';
                 timeInput.dataset.role = 'time';
                 timeInput.value = String(defaultTime);
+                const timeNumberInput = document.createElement('input');
+                timeNumberInput.type = 'number';
+                timeNumberInput.step = '0.01';
+                timeNumberInput.min = '0';
+                timeNumberInput.max = '1';
+                timeNumberInput.value = defaultTime.toFixed(2);
                 const timeValueLabel = document.createElement('span');
                 timeValueLabel.className = 'time-value';
                 timeValueLabel.textContent = defaultTime.toFixed(2);
+                const syncTimeLabel = (val) => {
+                    const normalized = Math.max(0, Math.min(1, Number.isFinite(val) ? val : 0));
+                    timeValueLabel.textContent = normalized.toFixed(2);
+                };
                 timeInput.addEventListener('input', () => {
-                    timeValueLabel.textContent = parseFloat(timeInput.value).toFixed(2);
+                    const val = parseFloat(timeInput.value);
+                    timeNumberInput.value = Number.isFinite(val) ? val.toFixed(2) : '0.00';
+                    syncTimeLabel(val);
                 });
+                const handleTimeNumberChange = () => {
+                    let val = parseFloat(timeNumberInput.value);
+                    if (!Number.isFinite(val)) return;
+                    val = Math.max(0, Math.min(1, val));
+                    timeNumberInput.value = val.toFixed(2);
+                    timeInput.value = String(val);
+                    syncTimeLabel(val);
+                };
+                timeNumberInput.addEventListener('input', handleTimeNumberChange);
+                timeNumberInput.addEventListener('change', handleTimeNumberChange);
                 const timeLabel = document.createElement('span');
                 timeLabel.className = 'slider-label';
                 timeLabel.textContent = 'Время';
                 timeWrap.appendChild(timeLabel);
                 timeWrap.appendChild(timeInput);
+                timeWrap.appendChild(timeNumberInput);
                 timeWrap.appendChild(timeValueLabel);
                 row.appendChild(timeWrap);
             }
@@ -1987,19 +2010,40 @@
             alphaInput.dataset.role = 'alpha';
             alphaInput.value = String(alphaValue);
             alphaInput.title = 'Прозрачность (0..1)';
+            const alphaNumberInput = document.createElement('input');
+            alphaNumberInput.type = 'number';
+            alphaNumberInput.step = '0.01';
+            alphaNumberInput.min = '0';
+            alphaNumberInput.max = '1';
+            alphaNumberInput.value = alphaValue.toFixed(2);
             const alphaValueLabel = document.createElement('span');
             alphaValueLabel.className = 'alpha-value';
             alphaValueLabel.textContent = alphaValue.toFixed(2);
-            alphaInput.addEventListener('input', () => {
-                alphaValueLabel.textContent = parseFloat(alphaInput.value).toFixed(2);
-                colorInput.dataset.alpha = alphaInput.value;
+            const handleAlphaChange = (val) => {
+                const normalized = Math.max(0, Math.min(1, Number.isFinite(val) ? val : 1));
+                alphaValueLabel.textContent = normalized.toFixed(2);
+                alphaNumberInput.value = normalized.toFixed(2);
+                colorInput.dataset.alpha = String(normalized);
+                alphaInput.value = String(normalized);
                 updatePalette();
+            };
+            alphaInput.addEventListener('input', () => {
+                const val = parseFloat(alphaInput.value);
+                handleAlphaChange(val);
             });
+            const handleAlphaNumberChange = () => {
+                const val = parseFloat(alphaNumberInput.value);
+                if (!Number.isFinite(val)) return;
+                handleAlphaChange(val);
+            };
+            alphaNumberInput.addEventListener('input', handleAlphaNumberChange);
+            alphaNumberInput.addEventListener('change', handleAlphaNumberChange);
             const alphaLabel = document.createElement('span');
             alphaLabel.className = 'slider-label';
             alphaLabel.textContent = 'Прозрачность';
             alphaWrap.appendChild(alphaLabel);
             alphaWrap.appendChild(alphaInput);
+            alphaWrap.appendChild(alphaNumberInput);
             alphaWrap.appendChild(alphaValueLabel);
             colorInput.dataset.alpha = String(alphaValue);
 
