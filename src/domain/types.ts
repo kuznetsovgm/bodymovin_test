@@ -55,6 +55,8 @@ export enum BackgroundLayerType {
 }
 
 export type BackgroundBase = {
+    /** Человеко-читаемое имя слоя для отображения в конфиге */
+    name?: string;
     transformAnimations?: TransformAnimationDescriptor[];
     colorAnimations?: ColorAnimationDescriptor[];
     strokeAnimations?: ColorAnimationDescriptor[];

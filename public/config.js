@@ -2469,7 +2469,9 @@
             const title = document.createElement('div');
             title.className = 'variant-title';
             const label = document.createElement('span');
-            label.textContent = layer.type || 'layer';
+            const typeLabel = layer.type || 'layer';
+            const customName = layer.name && layer.name.trim();
+            label.textContent = customName ? `${customName} (${typeLabel})` : typeLabel;
             title.appendChild(label);
             item.appendChild(title);
 
@@ -2612,6 +2614,16 @@
         typeSelect.value = layer.type || '';
         typeLabel.appendChild(typeSelect);
         typeRow.appendChild(typeLabel);
+
+        const nameLabel = document.createElement('label');
+        nameLabel.textContent = 'Название';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = 'Напр.: Фон';
+        nameInput.value = layer.name || '';
+        nameLabel.appendChild(nameInput);
+        typeRow.appendChild(nameLabel);
+
         container.appendChild(typeRow);
 
         const paramsContainer = document.createElement('div');
@@ -2834,6 +2846,8 @@
         container.appendChild(letterRow);
 
         function syncLayer() {
+            const trimmedName = (nameInput.value || '').trim();
+            layer.name = trimmedName || undefined;
             const type = typeSelect.value || 'solid';
             layer.type = type;
             layer.params = normalizeBackgroundParams(type, readParams(paramsContainer, backgroundParamSchema[type] || {}));
@@ -2868,7 +2882,18 @@
             layer.pathMorphAnimations = pathDesc ? [pathDesc] : [];
         }
 
+        function updateActiveLayerListName() {
+            const list = $('backgroundLayersList');
+            if (!list) return;
+            const activeSpan = list.querySelector('.variant-item.active .variant-title span');
+            if (!activeSpan) return;
+            const typeLabel = layer.type || 'layer';
+            const customName = (nameInput.value || '').trim();
+            activeSpan.textContent = customName ? `${customName} (${typeLabel})` : typeLabel;
+        }
+
         function renderAll() {
+            nameInput.value = layer.name || '';
             renderParams(
                 paramsContainer,
                 backgroundParamSchema[typeSelect.value] || {},
@@ -2970,13 +2995,9 @@
             textInput.disabled = fontInput.disabled;
         }
 
-        typeSelect.addEventListener('change', () => {
-            const newType = typeSelect.value || 'solid';
-            const preset = makeDefaultBackgroundLayer(newType);
-            state.backgroundLayers[idx] = { ...preset };
-            state.activeBackgroundIndex = idx;
-            renderBackgroundLayers();
-            renderBackgroundEditor();
+        nameInput.addEventListener('input', () => {
+            syncLayer();
+            updateActiveLayerListName();
         });
 
         [fontInput, textInput].forEach((inp) => {
@@ -4252,6 +4273,13 @@
                         delete desc.letterAnimations;
                     if (!desc.fontFile) delete desc.fontFile;
                     if (!desc.text) delete desc.text;
+                    if (typeof desc.name === 'string') {
+                        const trimmed = desc.name.trim();
+                        if (trimmed) desc.name = trimmed;
+                        else delete desc.name;
+                    } else {
+                        delete desc.name;
+                    }
                     return desc;
                 })
                 .filter(Boolean);

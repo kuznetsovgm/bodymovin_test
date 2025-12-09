@@ -420,7 +420,9 @@ async function buildBackgroundLayers(
     const fontCache = new Map<string, opentype.Font>();
 
     for (const desc of descs) {
-        const layer = buildBaseLayer(ctx.width, ctx.height, ctx.duration, `Background:${desc.type}`, layerIndex++);
+        const resolvedName =
+            (typeof desc.name === 'string' && desc.name.trim()) || `Background:${desc.type}`;
+        const layer = buildBaseLayer(ctx.width, ctx.height, ctx.duration, resolvedName, layerIndex++);
         layer.ks = applyTransformsWithCompose(
             desc.transformAnimations,
             layer.ks,
@@ -428,12 +430,14 @@ async function buildBackgroundLayers(
             transformRegistry,
         );
 
+        const groupName =
+            (typeof desc.name === 'string' && desc.name.trim()) || `bg_${desc.type}`;
         const group: GroupShapeElement = {
             ty: ShapeType.Group,
             cix: 1000,
             it: [],
             np: 1,
-            nm: `bg_${desc.type}`,
+            nm: groupName,
             bm: 0,
             hd: false,
         };
