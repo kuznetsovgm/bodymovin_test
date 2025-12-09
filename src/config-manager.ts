@@ -397,6 +397,7 @@ export class StickerConfigManager {
     async disableConfig(configId: string): Promise<boolean> {
         try {
             await this.redis.srem(CONFIG_ENABLED_SET, configId);
+            await this.removeFromEnabledOrder(configId);
             return true;
         } catch (error) {
             console.error('Error disabling config:', error);
@@ -425,6 +426,7 @@ export class StickerConfigManager {
             const key = `${CONFIG_PREFIX}${configId}`;
             await this.redis.del(key);
             await this.redis.srem(CONFIG_ENABLED_SET, configId);
+            await this.removeFromEnabledOrder(configId);
             return true;
         } catch (error) {
             console.error('Error deleting config:', error);
@@ -457,6 +459,104 @@ export class StickerConfigManager {
         } catch (error) {
             console.error('Error setting enabled config order:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Remove a configuration from manual enabled order (if present).
+     */
+    private async removeFromEnabledOrder(configId: string): Promise<void> {
+        try {
+            const stored = await this.redis.get(CONFIG_ENABLED_ORDER_KEY);
+            if (!stored) {
+                return;
+            }
+            let parsed: unknown;
+            try {
+                parsed = JSON.parse(stored);
+            } catch (error) {
+                console.error('Error parsing enabled order while removing id:', error);
+                return;
+            }
+            if (!Array.isArray(parsed)) {
+                return;
+            }
+            const filtered = (parsed as unknown[]).filter(
+                (id) => typeof id === 'string' && id !== configId,
+            ) as string[];
+            await this.redis.set(CONFIG_ENABLED_ORDER_KEY, JSON.stringify(filtered));
+        } catch (error) {
+            console.error('Error removing id from enabled order:', error);
+        }
+    }
+
+    /**
+     * Update manual enabled order when configuration ID changes after editing.
+     * Keeps the new ID at the same position as the old one (if any).
+     */
+    async updateEnabledOrderOnIdChange(
+        oldId: string,
+        newId: string,
+        enabled: boolean,
+    ): Promise<void> {
+        try {
+            const stored = await this.redis.get(CONFIG_ENABLED_ORDER_KEY);
+            if (!stored) {
+                if (enabled) {
+                    await this.redis.set(CONFIG_ENABLED_ORDER_KEY, JSON.stringify([newId]));
+                }
+                return;
+            }
+
+            let parsed: unknown;
+            try {
+                parsed = JSON.parse(stored);
+            } catch (error) {
+                console.error('Error parsing enabled order on id change:', error);
+                if (enabled) {
+                    await this.redis.set(CONFIG_ENABLED_ORDER_KEY, JSON.stringify([newId]));
+                }
+                return;
+            }
+
+            if (!Array.isArray(parsed)) {
+                if (enabled) {
+                    await this.redis.set(CONFIG_ENABLED_ORDER_KEY, JSON.stringify([newId]));
+                }
+                return;
+            }
+
+            const source = parsed as unknown[];
+            const cleaned: string[] = [];
+            let insertIndex: number | null = null;
+
+            for (const raw of source) {
+                if (typeof raw !== 'string') {
+                    continue;
+                }
+                if (raw === oldId) {
+                    if (insertIndex === null) {
+                        insertIndex = cleaned.length;
+                    }
+                    continue;
+                }
+                if (raw === newId) {
+                    continue;
+                }
+                cleaned.push(raw);
+            }
+
+            if (enabled) {
+                if (insertIndex === null || insertIndex < 0 || insertIndex > cleaned.length) {
+                    cleaned.push(newId);
+                } else {
+                    cleaned.splice(insertIndex, 0, newId);
+                }
+            }
+
+            await this.redis.set(CONFIG_ENABLED_ORDER_KEY, JSON.stringify(cleaned));
+        } catch (error) {
+            console.error('Error updating enabled order on id change:', error);
         }
     }
 

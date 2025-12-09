@@ -296,6 +296,7 @@ async function handleUpdateConfig(req: JsonRequest, res: http.ServerResponse, co
         const newId = await stickerConfigManager.saveConfig(config, enabled, meta);
 
         if (newId !== configId) {
+            await stickerConfigManager.updateEnabledOrderOnIdChange(configId, newId, enabled);
             await stickerConfigManager.deleteConfig(configId);
         }
 
