@@ -38,6 +38,9 @@
             canvas: null,
             container: null,
         },
+        localColorPalette: [],
+        localPaletteLoaded: false,
+        autoPreview: false,
     };
     const MIN_DURATION_FRAMES = 2;
 
@@ -417,6 +420,36 @@
         );
     }
 
+    let autoPreviewTimeout = null;
+    const AUTO_PREVIEW_DELAY = 600;
+
+    function triggerAutoPreview() {
+        if (!state.autoPreview) return;
+        if (autoPreviewTimeout) {
+            clearTimeout(autoPreviewTimeout);
+            autoPreviewTimeout = null;
+        }
+        autoPreviewTimeout = window.setTimeout(() => {
+            autoPreviewTimeout = null;
+            previewCurrent();
+        }, AUTO_PREVIEW_DELAY);
+    }
+
+    function attachAutoPreviewListeners() {
+        const sections = document.querySelectorAll('.form-section');
+        const handler = (event) => {
+            const target = event.target;
+            if (!state.autoPreview || !target) return;
+            if (!(target.matches && target.matches('input, select, textarea'))) return;
+            if (target.id === 'autoPreview') return;
+            triggerAutoPreview();
+        };
+        sections.forEach((section) => {
+            section.addEventListener('input', handler, true);
+            section.addEventListener('change', handler, true);
+        });
+    }
+
     function getLetterDefaults(type) {
         return (
             (state.meta &&
@@ -762,6 +795,21 @@
         ],
     };
 
+    const baseColorSwatches = [
+        { label: 'Белый', rgba: [1, 1, 1, 1] },
+        { label: 'Чёрный', rgba: [0, 0, 0, 1] },
+        { label: 'Графит', rgba: [0.1, 0.12, 0.18, 1] },
+        { label: 'Небо', rgba: [0.25, 0.65, 1, 1] },
+        { label: 'Лайм', rgba: [0.52, 0.97, 0.5, 1] },
+        { label: 'Неон', rgba: [1, 0.75, 0.3, 1] },
+        { label: 'Персик', rgba: [1, 0.62, 0.55, 1] },
+        { label: 'Фуксия', rgba: [0.88, 0.33, 0.77, 1] },
+        { label: 'Лавандовый', rgba: [0.67, 0.54, 0.96, 1] },
+        { label: 'Бирюза', rgba: [0.18, 0.82, 0.78, 1] },
+    ];
+
+    const LOCAL_PALETTE_STORAGE_KEY = 'stickerConfigurator.localPalette';
+
     function getColorPresets(type) {
         return colorPresets[type] || [];
     }
@@ -774,21 +822,6 @@
         return cfg;
     }
 
-    function findMatchingPreset(presets, values, isStroke) {
-        if (!values || !Array.isArray(values.colors) || !Array.isArray(values.times)) {
-            return null;
-        }
-        return presets.find((preset) => {
-            const cfg = preset.config;
-            return (
-                JSON.stringify(cfg.colors) === JSON.stringify(values.colors) &&
-                JSON.stringify(cfg.times) === JSON.stringify(values.times) &&
-                Boolean(cfg.loop) === Boolean(values.loop) &&
-                (!isStroke || (preset.strokeWidth ?? values.strokeWidth) === values.strokeWidth)
-            );
-        });
-    }
-
     function getColorDefaults(type) {
         if (!type || !state.meta || !state.meta.defaults || !state.meta.defaults.colorAnimationConfig) {
             return null;
@@ -796,6 +829,311 @@
         const cfg = state.meta.defaults.colorAnimationConfig[type];
         if (!cfg) return null;
         return JSON.parse(JSON.stringify(cfg));
+    }
+
+    function ensureLocalPaletteLoaded() {
+        if (state.localPaletteLoaded) return;
+        state.localPaletteLoaded = true;
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) {
+                state.localColorPalette = [];
+                return;
+            }
+            const raw = window.localStorage.getItem(LOCAL_PALETTE_STORAGE_KEY);
+            if (!raw) {
+                state.localColorPalette = [];
+                return;
+            }
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                state.localColorPalette = [];
+                return;
+            }
+            state.localColorPalette = parsed
+                .map((item) => normalizeRgba(item))
+                .filter((color) => Array.isArray(color));
+        } catch (err) {
+            console.warn('Failed to load local palette', err);
+            state.localColorPalette = [];
+        }
+    }
+
+    function saveLocalPalette() {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) return;
+            window.localStorage.setItem(
+                LOCAL_PALETTE_STORAGE_KEY,
+                JSON.stringify(state.localColorPalette || []),
+            );
+        } catch (err) {
+            console.warn('Failed to save local palette', err);
+        }
+    }
+
+    function getLocalPaletteColors() {
+        ensureLocalPaletteLoaded();
+        return (state.localColorPalette || []).map((color) => [...color]);
+    }
+
+    function addColorToLocalPalette(rgba) {
+        const normalized = normalizeRgba(rgba);
+        if (!normalized) return false;
+        ensureLocalPaletteLoaded();
+        const key = normalized.join(',');
+        if ((state.localColorPalette || []).some((color) => color.join(',') === key)) {
+            return false;
+        }
+        state.localColorPalette = [...(state.localColorPalette || []), normalized];
+        saveLocalPalette();
+        return true;
+    }
+
+    function removeColorFromLocalPalette(key) {
+        ensureLocalPaletteLoaded();
+        const palette = state.localColorPalette || [];
+        const idx = palette.findIndex((color) => color.join(',') === key);
+        if (idx === -1) return false;
+        palette.splice(idx, 1);
+        state.localColorPalette = [...palette];
+        saveLocalPalette();
+        return true;
+    }
+
+    function parseHexToNormalizedRgba(hex, alpha = 1) {
+        if (!hex) return null;
+        const clean = hex.replace('#', '').trim();
+        if (clean.length !== 6 && clean.length !== 3) return null;
+        const expand = clean.length === 3
+            ? clean
+                .split('')
+                .map((ch) => ch + ch)
+                .join('')
+            : clean;
+        const r = parseInt(expand.slice(0, 2), 16);
+        const g = parseInt(expand.slice(2, 4), 16);
+        const b = parseInt(expand.slice(4, 6), 16);
+        if ([r, g, b].some((v) => Number.isNaN(v))) return null;
+        return [r / 255, g / 255, b / 255, clamp01(alpha)];
+    }
+
+    function collectUsedColorsForPalette(currentValues, currentLabel) {
+        const palette = new Map();
+        const addColor = (rgba, source) => {
+            const normalized = normalizeRgba(rgba);
+            if (!normalized) return;
+            const key = normalized
+                .map((value) => Math.round(clamp01(value) * 1000) / 1000)
+                .join(',');
+            let entry = palette.get(key);
+            if (!entry) {
+                entry = {
+                    key,
+                    rgba: normalized,
+                    hex: rgbaToHex(normalized),
+                    alpha: normalized[3],
+                    sources: new Set(),
+                    count: 0,
+                };
+                palette.set(key, entry);
+            }
+            if (source) entry.sources.add(source);
+            entry.count += 1;
+        };
+
+        const addFromDescriptors = (list, label) => {
+            if (!Array.isArray(list)) return;
+            list.forEach((desc) => {
+                if (!desc || !desc.params || !Array.isArray(desc.params.colors)) return;
+                desc.params.colors.forEach((rgba) => addColor(rgba, label));
+            });
+        };
+
+        if (currentValues && Array.isArray(currentValues.colors)) {
+            currentValues.colors.forEach((rgba) => addColor(rgba, currentLabel || 'Текущая анимация'));
+        }
+
+        const collectFromForm = (paramsId, selectId, label, opts = {}) => {
+            const paramsEl = document.getElementById(paramsId);
+            const selectEl = document.getElementById(selectId);
+            if (!paramsEl || !selectEl || !selectEl.value) return;
+            const params = readColorParams(paramsEl, selectEl.value, opts);
+            if (params && Array.isArray(params.colors)) {
+                params.colors.forEach((rgba) => addColor(rgba, label));
+            }
+        };
+
+        collectFromForm('colorParams', 'colorType', 'Текст — заливка');
+        collectFromForm('strokeParams', 'strokeType', 'Текст — обводка', { isStroke: true });
+
+        (state.backgroundLayers || []).forEach((layer, idx) => {
+            if (!layer) return;
+            const baseLabel = `Фон ${idx + 1}`;
+            addFromDescriptors(layer.colorAnimations, `${baseLabel} — заливка`);
+            addFromDescriptors(layer.strokeAnimations, `${baseLabel} — обводка`);
+        });
+
+        if (state.knockout) {
+            addFromDescriptors(state.knockout.colorAnimations, 'Knockout — заливка');
+            addFromDescriptors(state.knockout.strokeAnimations, 'Knockout — обводка');
+        }
+
+        const sorted = Array.from(palette.values()).map((entry) => ({
+            type: 'color',
+            rgba: entry.rgba,
+            hex: entry.hex,
+            alpha: entry.alpha,
+            label: entry.hex,
+            tooltip:
+                entry.sources.size > 0
+                    ? `${entry.hex}\n${Array.from(entry.sources).join(', ')}`
+                    : entry.hex,
+            count: entry.count,
+            key: entry.key,
+            dedupeKey: `color:${entry.key}`,
+        }));
+        sorted.sort((a, b) => b.count - a.count);
+        return sorted.slice(0, 20);
+    }
+
+    function createColorPaletteBlock({
+        categories,
+        onColorPick,
+        onPresetPick,
+        onRemoveLocal,
+        onAddLocal,
+        onAddLocalFromPicker,
+    }) {
+        if (
+            !categories ||
+            (
+                !categories.some((cat) => cat.items && cat.items.length) &&
+                !categories.some((cat) => cat.allowAdd)
+            )
+        ) {
+            return null;
+        }
+        const block = document.createElement('div');
+        block.className = 'color-palette';
+
+        categories.forEach((category) => {
+            const dedupe = new Set();
+            const items = (category.items || []).reduce((acc, item) => {
+                const baseKey =
+                    item.dedupeKey ||
+                    (item.type === 'preset'
+                        ? `preset:${item.key || (item.preset && item.preset.id)}`
+                        : `color:${item.key || (item.rgba && item.rgba.join(','))}`);
+                if (!baseKey) return acc;
+                if (dedupe.has(baseKey)) return acc;
+                dedupe.add(baseKey);
+                acc.push({ ...item, dedupeKey: baseKey });
+                return acc;
+            }, []);
+
+            if (!items.length && !category.allowAdd) {
+                return;
+            }
+
+            const section = document.createElement('div');
+            section.className = 'color-swatch-section';
+            const header = document.createElement('div');
+            header.className = 'color-palette-header';
+            const title = document.createElement('div');
+            title.className = 'color-palette-title';
+            title.textContent = category.title;
+            header.appendChild(title);
+            if (category.allowAdd && (onAddLocal || onAddLocalFromPicker)) {
+                const actions = document.createElement('div');
+                actions.className = 'color-palette-actions';
+                if (onAddLocal) {
+                    const addBtn = document.createElement('button');
+                    addBtn.type = 'button';
+                    addBtn.className = 'small-button';
+                    addBtn.textContent = category.addButtonLabel || 'Добавить цвет';
+                    addBtn.addEventListener('click', onAddLocal);
+                    actions.appendChild(addBtn);
+                }
+                if (onAddLocalFromPicker) {
+                    const pickerBtn = document.createElement('button');
+                    pickerBtn.type = 'button';
+                    pickerBtn.className = 'small-button secondary';
+                    pickerBtn.textContent = category.addPickerButtonLabel || 'Выбрать цвет';
+                    const hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'color';
+                    hiddenInput.style.position = 'absolute';
+                    hiddenInput.style.opacity = '0';
+                    hiddenInput.style.pointerEvents = 'none';
+                    hiddenInput.tabIndex = -1;
+                    hiddenInput.addEventListener('change', () => {
+                        if (!hiddenInput.value) return;
+                        onAddLocalFromPicker(hiddenInput.value);
+                    });
+                    pickerBtn.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        hiddenInput.click();
+                    });
+                    actions.appendChild(pickerBtn);
+                    actions.appendChild(hiddenInput);
+                }
+                header.appendChild(actions);
+            }
+            section.appendChild(header);
+
+            if (items.length) {
+                const grid = document.createElement('div');
+                grid.className = 'color-swatch-grid';
+                items.forEach((item) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'color-swatch';
+                    btn.title = item.tooltip || item.label || '';
+                    const preview = document.createElement('span');
+                    preview.className = 'color-swatch-preview';
+                    if (item.type === 'preset' && item.gradient) {
+                        preview.style.background = item.gradient;
+                    } else {
+                        preview.style.background = rgbaToCss(item.rgba);
+                    }
+                    const label = document.createElement('span');
+                    label.className = 'color-swatch-label';
+                    label.textContent = item.label || '';
+                    btn.appendChild(preview);
+                    btn.appendChild(label);
+
+                    if (item.removable && onRemoveLocal) {
+                        btn.classList.add('color-swatch-removable');
+                        const removeBtn = document.createElement('span');
+                        removeBtn.className = 'color-swatch-remove';
+                        removeBtn.textContent = '✕';
+                        removeBtn.title = 'Удалить из локальной палитры';
+                        removeBtn.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            onRemoveLocal(item);
+                        });
+                        btn.appendChild(removeBtn);
+                    }
+
+                    btn.addEventListener('click', () => {
+                        if (item.type === 'preset') {
+                            if (onPresetPick) onPresetPick(item.preset);
+                        } else if (onColorPick) {
+                            onColorPick(item.rgba);
+                        }
+                    });
+                    grid.appendChild(btn);
+                });
+                section.appendChild(grid);
+            } else if (category.allowAdd) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'params-message';
+                placeholder.textContent = 'Пока пусто';
+                section.appendChild(placeholder);
+            }
+
+            block.appendChild(section);
+        });
+
+        return block;
     }
 
     function parseArrayInput(value) {
@@ -816,6 +1154,42 @@
         const lo = typeof min === 'number' ? min : -Infinity;
         const hi = typeof max === 'number' ? max : Infinity;
         return Math.min(hi, Math.max(lo, val));
+    }
+
+    function clamp01(val) {
+        if (typeof val !== 'number' || Number.isNaN(val)) return 0;
+        return Math.min(1, Math.max(0, val));
+    }
+
+    function normalizeRgba(color) {
+        if (!Array.isArray(color) || color.length < 3) return null;
+        const [r, g, b, a = 1] = color;
+        if ([r, g, b].some((v) => typeof v !== 'number' || Number.isNaN(v))) {
+            return null;
+        }
+        return [clamp01(r), clamp01(g), clamp01(b), clamp01(a)];
+    }
+
+    function rgbaComponentToHex(value) {
+        const v = clamp01(value);
+        return Math.round(v * 255)
+            .toString(16)
+            .padStart(2, '0');
+    }
+
+    function rgbaToHex(rgba) {
+        const color = normalizeRgba(rgba);
+        if (!color) return '#000000';
+        const [r, g, b] = color;
+        return `#${rgbaComponentToHex(r)}${rgbaComponentToHex(g)}${rgbaComponentToHex(b)}`;
+    }
+
+    function rgbaToCss(rgba) {
+        const color = normalizeRgba(rgba);
+        if (!color) return 'rgba(0,0,0,1)';
+        const [r, g, b, a = 1] = color;
+        const to255 = (v) => Math.round(clamp01(v) * 255);
+        return `rgba(${to255(r)}, ${to255(g)}, ${to255(b)}, ${clamp01(a).toFixed(2)})`;
     }
 
     function roundToPrecision(val, precision = 2) {
@@ -840,6 +1214,7 @@
         try {
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
+            triggerAutoPreview();
         } catch {
             // ignore
         }
@@ -1220,33 +1595,10 @@
         const defaultValues = options.defaultValues || getColorDefaults(type) || null;
 
         const presets = getColorPresets(type);
-        if (presets.length) {
-            const presetRow = document.createElement('div');
-            presetRow.className = 'preset-row';
-            const presetSelect = document.createElement('select');
-            presets.forEach((preset) => {
-                const option = document.createElement('option');
-                option.value = preset.id;
-                option.textContent = preset.label;
-                presetSelect.appendChild(option);
-            });
-            const matchingPreset = findMatchingPreset(presets, values, options.isStroke);
-            if (matchingPreset) {
-                presetSelect.value = matchingPreset.id;
-            }
-            presetSelect.addEventListener('change', () => {
-                const preset = presets.find((p) => p.id === presetSelect.value);
-                if (!preset) {
-                    setStatus('Пресет не выбран', true);
-                    return;
-                }
-                const presetCfg = clonePresetConfig(preset, options.isStroke);
-                renderColorParams(container, type, presetCfg, options);
-                setStatus('Пресет применён');
-            });
-            presetRow.appendChild(presetSelect);
-            container.appendChild(presetRow);
-        }
+
+        const paletteMount = document.createElement('div');
+        paletteMount.className = 'color-palette-mount';
+        container.appendChild(paletteMount);
 
         let sourceColors =
             (values && Array.isArray(values.colors) && values.colors.length
@@ -1287,6 +1639,163 @@
         rowsWrap.className = 'color-rows';
         rowsWrap.dataset.type = type;
 
+        let activeColorInput = null;
+        let activeColorRow = null;
+        const getActiveColorRgba = () => {
+            if (!activeColorInput) return null;
+            const hex = activeColorInput.value;
+            const alpha = parseFloat(activeColorInput.dataset.alpha || '1');
+            return parseHexToNormalizedRgba(hex, alpha);
+        };
+
+        let updatePalette = () => {};
+        const setActiveColorRow = (row, input) => {
+            if (activeColorRow && activeColorRow !== row) {
+                activeColorRow.classList.remove('color-row-active');
+            }
+            activeColorRow = row;
+            if (activeColorRow) {
+                activeColorRow.classList.add('color-row-active');
+            }
+            if (input) {
+                activeColorInput = input;
+            }
+        };
+
+        const updateAlphaControls = (row, alpha) => {
+            const alphaInput = row.querySelector('input[data-role="alpha"]');
+            const alphaValueLabel = row.querySelector('.alpha-value');
+            if (alphaInput) {
+                const clamped = clamp01(typeof alpha === 'number' ? alpha : parseFloat(alphaInput.value) || 1);
+                alphaInput.value = String(clamped);
+                if (alphaValueLabel) {
+                    alphaValueLabel.textContent = clamped.toFixed(2);
+                }
+                const colorInput = row.querySelector('input[data-role="color"]');
+                if (colorInput) {
+                    colorInput.dataset.alpha = String(clamped);
+                }
+            }
+        };
+
+        const applyPaletteColor = (rgba) => {
+            const targetRow = activeColorRow || rowsWrap.querySelector('.color-row');
+            if (!targetRow) return;
+            const colorInputEl = targetRow.querySelector('input[data-role="color"]');
+            if (!colorInputEl) return;
+            setActiveColorRow(targetRow, colorInputEl);
+            const normalized = normalizeRgba(rgba) || [0, 0, 0, 1];
+            colorInputEl.value = rgbaToHex(normalized);
+            colorInputEl.dataset.alpha = String(normalized[3] ?? 1);
+            updateAlphaControls(targetRow, normalized[3]);
+            dispatchParamEvents(colorInputEl);
+            updatePalette();
+        };
+
+        const getCurrentValues = () => readColorParams(container, type, { isStroke: options.isStroke });
+
+        updatePalette = () => {
+            const currentValues = getCurrentValues();
+            const usedColors = collectUsedColorsForPalette(
+                currentValues,
+                options && options.isStroke ? 'Текущая обводка' : 'Текущая заливка',
+            );
+            const presetItems = [];
+            baseColorSwatches.forEach((swatch) => {
+                presetItems.push({
+                    type: 'color',
+                    rgba: swatch.rgba,
+                    label: swatch.label,
+                    tooltip: swatch.label,
+                    key: swatch.rgba.join(','),
+                });
+            });
+            presets.forEach((preset) => {
+                const colors = (preset.config && preset.config.colors) || [];
+                let gradient = '#1f2937';
+                if (colors.length > 1) {
+                    gradient = `linear-gradient(90deg, ${colors.map((rgba) => rgbaToCss(rgba)).join(', ')})`;
+                } else if (colors.length === 1) {
+                    gradient = rgbaToCss(colors[0]);
+                }
+                presetItems.push({
+                    type: 'preset',
+                    label: preset.label,
+                    tooltip: preset.label,
+                    preset,
+                    gradient,
+                    key: preset.id,
+                    dedupeKey: `preset:${preset.id}`,
+                });
+            });
+
+            const localColors = getLocalPaletteColors().map((rgba) => ({
+                type: 'color',
+                rgba,
+                label: rgbaToHex(rgba),
+                tooltip: 'Локальная палитра',
+                key: rgba.join(','),
+                removable: true,
+            }));
+
+            const categories = [
+                { title: 'Предустановленные цвета', items: presetItems },
+                {
+                    title: 'Локальная палитра',
+                    items: localColors,
+                    allowAdd: true,
+                    addButtonLabel: 'Добавить текущий цвет',
+                    addPickerButtonLabel: 'Выбрать цвет',
+                },
+                { title: 'Палитра варианта', items: usedColors },
+            ];
+
+            const block = createColorPaletteBlock({
+                categories,
+                onColorPick: (rgba) => applyPaletteColor(rgba),
+                onPresetPick: (preset) => {
+                    const presetCfg = clonePresetConfig(preset, options.isStroke);
+                    renderColorParams(container, type, presetCfg, options);
+                    setStatus('Пресет применён');
+                },
+                onRemoveLocal: (item) => {
+                    const key = (item && item.key) || (item && item.rgba && item.rgba.join(','));
+                    if (!key) return;
+                    removeColorFromLocalPalette(key);
+                    updatePalette();
+                },
+                onAddLocal: () => {
+                    const current = getActiveColorRgba();
+                    if (!current) {
+                        setStatus('Выберите ключ цвета', true);
+                        return;
+                    }
+                    const added = addColorToLocalPalette(current);
+                    if (!added) {
+                        setStatus('Цвет уже есть в локальной палитре');
+                    } else {
+                        setStatus('Цвет добавлен в локальную палитру');
+                    }
+                    updatePalette();
+                },
+                onAddLocalFromPicker: (hex) => {
+                    const rgba = parseHexToNormalizedRgba(hex, 1);
+                    if (!rgba) return;
+                    const added = addColorToLocalPalette(rgba);
+                    if (!added) {
+                        setStatus('Цвет уже есть в локальной палитре');
+                    } else {
+                        setStatus('Цвет добавлен в локальную палитру');
+                    }
+                    applyPaletteColor(rgba);
+                },
+            });
+            paletteMount.innerHTML = '';
+            if (block) {
+                paletteMount.appendChild(block);
+            }
+        };
+
         const count = Math.max(sourceColors.length, sourceTimes.length, 1);
 
         const makeRow = (idx, colorVal, timeVal) => {
@@ -1308,6 +1817,27 @@
             const hex = `#${toHexComp(r)}${toHexComp(g)}${toHexComp(b)}`;
             colorInput.value = hex;
             colorInput.dataset.alpha = String(Number.isFinite(a) ? a : 1);
+
+            const activateRow = (event) => {
+                if (event) event.stopPropagation();
+                setActiveColorRow(row, colorInput);
+            };
+            colorInput.addEventListener('focus', activateRow);
+            colorInput.addEventListener('click', activateRow);
+            const handleColorValueChange = () => {
+                setActiveColorRow(row, colorInput);
+                updatePalette();
+            };
+            colorInput.addEventListener('input', handleColorValueChange);
+            colorInput.addEventListener('change', handleColorValueChange);
+            row.addEventListener('click', (event) => {
+                const target = event.target;
+                if (target && target.closest('button')) return;
+                setActiveColorRow(row, colorInput);
+            });
+            if (!activeColorRow) {
+                setActiveColorRow(row, colorInput);
+            }
 
             let timeInput;
             if (!isStatic) {
@@ -1354,6 +1884,7 @@
             alphaInput.addEventListener('input', () => {
                 alphaValueLabel.textContent = parseFloat(alphaInput.value).toFixed(2);
                 colorInput.dataset.alpha = alphaInput.value;
+                updatePalette();
             });
             const alphaLabel = document.createElement('span');
             alphaLabel.className = 'slider-label';
@@ -1369,6 +1900,7 @@
             removeBtn.className = 'small-button';
             removeBtn.addEventListener('click', () => {
                 row.remove();
+                updatePalette();
             });
 
             row.appendChild(colorInput);
@@ -1400,6 +1932,7 @@
                 const currentRows = rowsWrap.querySelectorAll('.color-row');
                 const idx = currentRows.length;
                 makeRow(idx, [1, 1, 1, 1], idx === 0 ? 0 : 1);
+                updatePalette();
             });
             buttonsWrap.appendChild(addBtn);
         }
@@ -1489,6 +2022,8 @@
             strokeLabel.appendChild(strokeInput);
             container.appendChild(strokeLabel);
         }
+
+        updatePalette();
     }
 
     function readColorParams(container, type, options = {}) {
@@ -2527,6 +3062,7 @@
         syncTextInputsFromState();
         updateBackgroundOverlay();
         renderPreviewLayersList();
+        triggerAutoPreview();
         try {
             event.preventDefault();
         } catch {}
@@ -2534,6 +3070,7 @@
 
     function stopTextDrag() {
         textDragState.mode = null;
+        triggerAutoPreview();
     }
 
     function applyPreviewViewport() {
@@ -2795,6 +3332,7 @@
         layer.params = normalizeBackgroundParams(layer.type, params);
         syncBackgroundParamInputsFromLayer(layer);
         updateBackgroundOverlay();
+        triggerAutoPreview();
 
         try {
             event.preventDefault();
@@ -2806,6 +3344,7 @@
     function stopBackgroundDrag() {
         backgroundDragState.mode = null;
         backgroundDragState.layerIndex = null;
+        triggerAutoPreview();
     }
 
     function initBackgroundOverlay() {
@@ -3764,6 +4303,7 @@
     }
 
     async function previewCurrent() {
+        state.autoPreviewPending = false;
         try {
             const text = $('previewText').value || '';
             if (!text.trim()) {
@@ -3843,6 +4383,7 @@
         const frameRateSelect = $('frameRate');
         const durationSlider = $('durationSlider');
         const durationInput = $('duration');
+        ensureLocalPaletteLoaded();
 
         // Глобальное плавающее окно предпросмотра варианта
         let overlay = document.getElementById('variantPreview');
@@ -3952,9 +4493,21 @@
             previewTextInput.addEventListener('input', updateFontFilePreview);
         }
 
+        attachAutoPreviewListeners();
+
         $('refreshBtn').addEventListener('click', refreshVariants);
         $('saveBtn').addEventListener('click', saveCurrentVariant);
         $('previewBtn').addEventListener('click', previewCurrent);
+        const autoPreviewToggle = $('autoPreview');
+        if (autoPreviewToggle) {
+            autoPreviewToggle.addEventListener('change', () => {
+                state.autoPreview = autoPreviewToggle.checked;
+                if (state.autoPreview) {
+                    triggerAutoPreview();
+                }
+            });
+            state.autoPreview = autoPreviewToggle.checked;
+        }
 
         $('transformType').addEventListener('change', () => {
             const type = $('transformType').value;
