@@ -1392,7 +1392,7 @@
                 type,
                 params: { count: 5, stripeHeightFactor: 0.1, gapFactor: 0.05, cornerRadius: 0 },
                 colorAnimations: [
-                    { type: 'none', params: { colors: [[0.2, 0.2, 0.2, 1]], times: [0], loop: false } },
+                    { type: 'none', params: { colors: [[0, 0, 0, 1]], times: [0], loop: false } },
                 ],
             };
         }
@@ -1401,15 +1401,17 @@
                 type,
                 text: '*',
                 params: {
-                    paddingFactor: 0.1,
-                    gridColumns: 2,
-                    gridRows: 2,
-                    spacingXFactor: 0.3,
-                    spacingYFactor: 0.3,
-                    colorPhaseStep: 0.1,
+                    paddingFactor: 0,
+                    gridColumns: 0,
+                    gridRows: 0,
+                    spacingXFactor: 0,
+                    spacingYFactor: 0,
+                    colorPhaseStep: 0,
+                    scale: 1,
+                    opacity: 1,
                 },
                 colorAnimations: [
-                    { type: 'none', params: { colors: [[0.8, 0.8, 0.8, 1]], times: [0], loop: false } },
+                    { type: 'none', params: { colors: [[0, 0, 0, 1]], times: [0], loop: false } },
                 ],
             };
         }
@@ -1417,20 +1419,20 @@
             return {
                 type,
                 text: '',
-                params: { paddingFactor: 0, colorPhaseStep: 0.1 },
+                params: { paddingFactor: 0, colorPhaseStep: 0, scale: 1, opacity: 1 },
                 colorAnimations: [
-                    { type: 'none', params: { colors: [[0.4, 0.4, 0.4, 0.3]], times: [0], loop: false } },
+                    { type: 'none', params: { colors: [[0, 0, 0, 1]], times: [0], loop: false } },
                 ],
             };
         }
         return {
             type,
-            params: { paddingFactor: 0, cornerRadius: 0 },
-            colorAnimations: [
-                { type: 'none', params: { colors: [[0.1, 0.1, 0.1, 1]], times: [0], loop: false } },
-            ],
-        };
-    }
+                params: { paddingFactor: 0, cornerRadius: 0 },
+                colorAnimations: [
+                    { type: 'none', params: { colors: [[0, 0, 0, 1]], times: [0], loop: false } },
+                ],
+            };
+        }
 
     function makeDefaultKnockout() {
         const preset = getBackgroundDefaults('knockout');
@@ -2865,7 +2867,7 @@
             layer.letterAnimations = letterDesc ? [letterDesc] : [];
 
             const fillDesc = buildColorDescriptor(colorSelect.value, colorParams, {
-                fallbackBaseColor: getBaseColorFromDescriptor(layer.colorAnimations && layer.colorAnimations[0]) || [0.1, 0.1, 0.1],
+                fallbackBaseColor: getBaseColorFromDescriptor(layer.colorAnimations && layer.colorAnimations[0]) || [0, 0, 0],
                 isStatic: colorSelect.value === 'none',
             });
             layer.colorAnimations = fillDesc ? [fillDesc] : [];
@@ -2950,7 +2952,7 @@
             renderColorParams(
                 colorParams,
                 colorSelect.value,
-                normalizeColorParamsForUi(color, getBaseColorFromDescriptor(color) || [0.1, 0.1, 0.1], {
+                normalizeColorParamsForUi(color, getBaseColorFromDescriptor(color) || [0, 0, 0], {
                     isStatic: colorSelect.value === 'none',
                 }),
             );

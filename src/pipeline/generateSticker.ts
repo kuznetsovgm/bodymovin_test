@@ -761,8 +761,9 @@ function buildTextLikeBackground(
             lettersCount: total,
         });
         const items: any[] = [...pathShapes];
-        const phase = desc.params?.colorPhaseStep
-            ? ((idx * desc.params.colorPhaseStep) % 1)
+        const colorPhaseStep = desc.params?.colorPhaseStep;
+        const phase = colorPhaseStep != null
+            ? ((idx * colorPhaseStep) % 1)
             : total <= 1
             ? 0
             : (total - 1 - idx) / total;

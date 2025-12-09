@@ -585,7 +585,7 @@ async function handleMeta(res: http.ServerResponse) {
                     spacingXFactor: { min: 0, max: 2, step: 0.05 },
                     spacingYFactor: { min: 0, max: 2, step: 0.05 },
                     colorPhaseStep: { min: 0, max: 1, step: 0.01 },
-                    scale: { min: 0, max: 5, step: 0.01 },
+                    scale: { min: 0, max: 5, step: 0.01, default: 1 },
                     rotationDeg: { min: -360, max: 360, step: 1 },
                     opacity: { min: 0, max: 1, step: 0.01, default: 1 },
                     offsetX: { min: -1000, max: 1000, step: 1 },
@@ -595,7 +595,7 @@ async function handleMeta(res: http.ServerResponse) {
                     paddingFactor: { min: 0, max: 0.5, step: 0.01 },
                     cornerRadius: { min: 0, max: 80, step: 1 },
                     colorPhaseStep: { min: 0, max: 1, step: 0.01 },
-                    scale: { min: 0, max: 5, step: 0.01 },
+                    scale: { min: 0, max: 5, step: 0.01, default: 1 },
                     rotationDeg: { min: -360, max: 360, step: 1 },
                     opacity: { min: 0, max: 1, step: 0.01, default: 1 },
                     offsetX: { min: -1000, max: 1000, step: 1 },
@@ -610,7 +610,7 @@ async function handleMeta(res: http.ServerResponse) {
                         {
                             type: ColorAnimationType.None,
                             params: {
-                                colors: [[0.1, 0.1, 0.1, 1]],
+                                colors: [[0, 0, 0, 1]],
                                 times: [0],
                                 loop: false,
                             },
@@ -639,7 +639,7 @@ async function handleMeta(res: http.ServerResponse) {
                         {
                             type: ColorAnimationType.None,
                             params: {
-                                colors: [[0.2, 0.2, 0.2, 1]],
+                                colors: [[0, 0, 0, 1]],
                                 times: [0],
                                 loop: false,
                             },
@@ -650,18 +650,20 @@ async function handleMeta(res: http.ServerResponse) {
                     type: BackgroundLayerType.GlyphPattern,
                     text: '*',
                     params: {
-                        paddingFactor: 0.1,
-                        gridColumns: 2,
-                        gridRows: 2,
-                        spacingXFactor: 0.3,
-                        spacingYFactor: 0.3,
-                        colorPhaseStep: 0.1,
+                        paddingFactor: 0,
+                        gridColumns: 0,
+                        gridRows: 0,
+                        spacingXFactor: 0,
+                        spacingYFactor: 0,
+                        colorPhaseStep: 0,
+                        scale: 1,
+                        opacity: 1,
                     },
                     colorAnimations: [
                         {
                             type: ColorAnimationType.None,
                             params: {
-                                colors: [[0.8, 0.8, 0.8, 1]],
+                                colors: [[0, 0, 0, 1]],
                                 times: [0],
                                 loop: false,
                             },
@@ -727,13 +729,15 @@ async function handleMeta(res: http.ServerResponse) {
                     text: '',
                     params: {
                         paddingFactor: 0,
-                        colorPhaseStep: 0.1,
+                        colorPhaseStep: 0,
+                        scale: 1,
+                        opacity: 1,
                     },
                     colorAnimations: [
                         {
                             type: ColorAnimationType.None,
                             params: {
-                                colors: [[0.4, 0.4, 0.4, 0.3]],
+                                colors: [[0, 0, 0, 1]],
                                 times: [0],
                                 loop: false,
                             },
