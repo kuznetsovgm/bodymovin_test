@@ -442,9 +442,21 @@
             if (!state.autoPreview || !target) return;
             if (!(target.matches && target.matches('input, select, textarea'))) return;
             if (target.id === 'autoPreview') return;
+            const nextValue = getAutoPreviewControlValue(target);
+            const prevValue = target.dataset ? target.dataset.autoPreviewValue : undefined;
+            if (prevValue !== undefined && prevValue === nextValue) return;
+            if (target.dataset) {
+                target.dataset.autoPreviewValue = nextValue;
+            }
             triggerAutoPreview();
         };
         sections.forEach((section) => {
+            const inputs = section.querySelectorAll('input, select, textarea');
+            inputs.forEach((input) => {
+                if (input.dataset) {
+                    input.dataset.autoPreviewValue = getAutoPreviewControlValue(input);
+                }
+            });
             section.addEventListener('input', handler, true);
             section.addEventListener('change', handler, true);
         });
@@ -1199,6 +1211,18 @@
         return Math.round(val * factor) / factor;
     }
 
+    function numbersAreClose(a, b, epsilon = 1e-4) {
+        const aIsNum = typeof a === 'number' && Number.isFinite(a);
+        const bIsNum = typeof b === 'number' && Number.isFinite(b);
+        if (aIsNum && bIsNum) {
+            return Math.abs(a - b) <= epsilon;
+        }
+        if (!aIsNum && !bIsNum) {
+            return a === b;
+        }
+        return false;
+    }
+
     function formatNumberValue(val, precision = 2) {
         if (typeof val !== 'number' || Number.isNaN(val)) return '';
         const rounded = roundToPrecision(val, precision);
@@ -1218,6 +1242,53 @@
         } catch {
             // ignore
         }
+    }
+
+    function didTextTransformChange(prev, next) {
+        if (!prev) prev = {};
+        if (!next) next = {};
+        return ['scale', 'rotationDeg', 'offsetX', 'offsetY'].some(
+            (key) => !numbersAreClose(prev[key], next[key]),
+        );
+    }
+
+    function didBackgroundParamsChange(prev, next) {
+        const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
+        for (const key of keys) {
+            const prevVal = prev ? prev[key] : undefined;
+            const nextVal = next ? next[key] : undefined;
+            if (typeof nextVal === 'number' || typeof prevVal === 'number') {
+                if (!numbersAreClose(prevVal, nextVal)) return true;
+            } else if (prevVal !== nextVal) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getAutoPreviewControlValue(el) {
+        if (!el) return '';
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag === 'input') {
+            const type = (el.type || '').toLowerCase();
+            if (type === 'checkbox' || type === 'radio') {
+                return el.checked ? '1' : '0';
+            }
+            return el.value != null ? String(el.value) : '';
+        }
+        if (tag === 'select') {
+            if (el.multiple) {
+                return Array.from(el.options)
+                    .filter((opt) => opt.selected)
+                    .map((opt) => opt.value)
+                    .join(',');
+            }
+            return el.value != null ? String(el.value) : '';
+        }
+        if (tag === 'textarea') {
+            return el.value != null ? String(el.value) : '';
+        }
+        return el.value != null ? String(el.value) : '';
     }
 
     function createResetButton(onReset) {
@@ -2777,6 +2848,7 @@
         viewportScale: 1,
         centerClientX: 0,
         centerClientY: 0,
+        changed: false,
     };
 
     function getCompositionSize() {
@@ -2870,6 +2942,7 @@
         scaleFactor: 1,
         centerClientX: 0,
         centerClientY: 0,
+        changed: false,
     };
 
     function setActiveOverlayTarget(target) {
@@ -3029,6 +3102,7 @@
             textDragState.startRadius = 0;
             textDragState.startAngle = 0;
         }
+        textDragState.changed = false;
         try {
             event.preventDefault();
         } catch {}
@@ -3036,7 +3110,8 @@
 
     function handleTextPointerMove(event) {
         if (!textDragState.mode) return;
-        const params = { ...(state.textTransform || {}) };
+        const prevParams = state.textTransform || {};
+        const params = { ...prevParams };
         const scaleFactor = textDragState.scaleFactor || 1;
         if (textDragState.mode === 'move') {
             const dx = (event.clientX - textDragState.startX) / scaleFactor;
@@ -3058,19 +3133,26 @@
             const deltaDeg = (angle - textDragState.startAngle) * (180 / Math.PI);
             params.rotationDeg = roundToPrecision(textDragState.startRotation + deltaDeg);
         }
-        state.textTransform = params;
-        syncTextInputsFromState();
-        updateBackgroundOverlay();
-        renderPreviewLayersList();
-        triggerAutoPreview();
+        const hasChanged = didTextTransformChange(prevParams, params);
+        if (hasChanged) {
+            state.textTransform = params;
+            textDragState.changed = true;
+            syncTextInputsFromState();
+            updateBackgroundOverlay();
+            renderPreviewLayersList();
+        }
         try {
             event.preventDefault();
         } catch {}
     }
 
     function stopTextDrag() {
+        const shouldTrigger = textDragState.changed;
         textDragState.mode = null;
-        triggerAutoPreview();
+        textDragState.changed = false;
+        if (shouldTrigger) {
+            triggerAutoPreview();
+        }
     }
 
     function applyPreviewViewport() {
@@ -3273,6 +3355,7 @@
         backgroundDragState.startScale = scale;
         backgroundDragState.startRotationDeg = rotationDeg;
         backgroundDragState.viewportScale = 1;
+        backgroundDragState.changed = false;
 
         if (mode === 'scale' || mode === 'rotate') {
             const dx0 = event.clientX - visual.centerClientX;
@@ -3296,7 +3379,8 @@
         if (backgroundDragState.layerIndex == null) return;
         if (!state.backgroundLayers || !state.backgroundLayers[backgroundDragState.layerIndex]) return;
         const layer = state.backgroundLayers[backgroundDragState.layerIndex];
-        const params = { ...(layer.params || {}) };
+        const prevParams = layer.params || {};
+        const params = { ...prevParams };
 
         const mode = backgroundDragState.mode;
         const scaleFactor = backgroundDragState.scaleFactor || 1;
@@ -3329,10 +3413,14 @@
             params.rotationDeg = roundToPrecision(backgroundDragState.startRotationDeg + deltaDeg);
         }
 
-        layer.params = normalizeBackgroundParams(layer.type, params);
-        syncBackgroundParamInputsFromLayer(layer);
-        updateBackgroundOverlay();
-        triggerAutoPreview();
+        const prevNormalized = normalizeBackgroundParams(layer.type, prevParams);
+        const normalized = normalizeBackgroundParams(layer.type, params);
+        if (didBackgroundParamsChange(prevNormalized, normalized)) {
+            layer.params = normalized;
+            backgroundDragState.changed = true;
+            syncBackgroundParamInputsFromLayer(layer);
+            updateBackgroundOverlay();
+        }
 
         try {
             event.preventDefault();
@@ -3344,7 +3432,11 @@
     function stopBackgroundDrag() {
         backgroundDragState.mode = null;
         backgroundDragState.layerIndex = null;
-        triggerAutoPreview();
+        const shouldTrigger = backgroundDragState.changed;
+        backgroundDragState.changed = false;
+        if (shouldTrigger) {
+            triggerAutoPreview();
+        }
     }
 
     function initBackgroundOverlay() {
