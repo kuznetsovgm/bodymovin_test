@@ -77,6 +77,8 @@ export type ColorKeyframeTrackConfig = {
     loop: boolean;
     /** Обратное направление радуги */
     reverse?: boolean;
+    /** Ширина "окна" по треку (0..1), если задано */
+    windowFraction?: number;
 };
 
 export type NoneColorConfig = {
@@ -88,6 +90,8 @@ export type ColorAnimationConfig = {
     [ColorAnimationType.None]: NoneColorConfig;
     [ColorAnimationType.CycleRGB]: ColorKeyframeTrackConfig;
     [ColorAnimationType.Rainbow]: ColorKeyframeTrackConfig;
+    [ColorAnimationType.Zebra]: ColorKeyframeTrackConfig;
+    [ColorAnimationType.Chase]: ColorKeyframeTrackConfig;
 };
 
 export const colorAnimationConfig: ColorAnimationConfig = {
@@ -117,6 +121,29 @@ export const colorAnimationConfig: ColorAnimationConfig = {
             [1, 0, 0, 1],
         ],
         times: [0, 1 / 8, 2 / 8, 3 / 8, 4 / 8, 5 / 8, 6 / 8, 7 / 8, 1],
+        loop: true,
+        // windowFraction по умолчанию не задан, чтобы старая логика не менялась
+    },
+    [ColorAnimationType.Zebra]: {
+        colors: [
+            [1, 1, 1, 1],
+            [0, 0, 0, 1],
+        ],
+        times: [0, 1],
+        loop: false,
+    },
+    [ColorAnimationType.Chase]: {
+        colors: [
+            [1, 0, 0, 1],
+            [1, 0.5, 0, 1],
+            [1, 1, 0, 1],
+            [0, 1, 0, 1],
+            [0, 0.5, 1, 1],
+            [0, 0, 1, 1],
+            [0.5, 0, 1, 1],
+            [1, 0, 0.5, 1],
+        ],
+        times: [0, 1 / 7, 2 / 7, 3 / 7, 4 / 7, 5 / 7, 6 / 7, 1],
         loop: true,
     },
 };

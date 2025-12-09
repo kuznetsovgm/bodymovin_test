@@ -20,10 +20,24 @@ export function buildLetterStyles(
 
     const out: { fill?: FillShape; stroke?: StrokeShape } = {};
 
-    const baseFillColor = resolveBaseColor(colorAnimations, undefined);
+    const colorAnimationsWithLetterIndex =
+        colorAnimations &&
+        colorAnimations.map((desc) => ({
+            ...desc,
+            params: { ...(desc.params as any), letterIndex },
+        }));
+
+    const strokeAnimationsWithLetterIndex =
+        strokeAnimations &&
+        strokeAnimations.map((desc) => ({
+            ...desc,
+            params: { ...(desc.params as any), letterIndex },
+        }));
+
+    const baseFillColor = resolveBaseColor(colorAnimationsWithLetterIndex, undefined);
     if (baseFillColor) {
         const track = applyColorsWithCompose(
-            colorAnimations,
+            colorAnimationsWithLetterIndex,
             baseFillColor,
             { duration },
             letterPhase,
@@ -32,10 +46,10 @@ export function buildLetterStyles(
         out.fill = trackToFill(track, 500 + letterIndex);
     }
 
-    const strokeStyle = resolveStrokeStyle(strokeAnimations);
+    const strokeStyle = resolveStrokeStyle(strokeAnimationsWithLetterIndex);
     if (strokeStyle) {
         const strokeTrack = applyColorsWithCompose(
-            strokeAnimations,
+            strokeAnimationsWithLetterIndex,
             strokeStyle.color,
             { duration },
             letterPhase,

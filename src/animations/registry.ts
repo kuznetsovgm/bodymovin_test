@@ -32,6 +32,10 @@ export const colorRegistry: Record<
 > = {
     [ColorAnimationType.None]: (ctx, _phase = 0, base = [1, 1, 1], params) =>
         buildColorTrack(ColorAnimationType.None, ctx, _phase, base, params),
+    [ColorAnimationType.Chase]: (ctx, phase = 0, base = [1, 1, 1], params) =>
+        buildColorTrack(ColorAnimationType.Chase, ctx, phase, base, params),
+    [ColorAnimationType.Zebra]: (ctx, phase = 0, base = [1, 1, 1], params) =>
+        buildColorTrack(ColorAnimationType.Zebra, ctx, phase, base, params),
     [ColorAnimationType.CycleRGB]: (ctx, phase = 0, base = [1, 1, 1], params) =>
         buildColorTrack(ColorAnimationType.CycleRGB, ctx, phase, base, params),
     [ColorAnimationType.Rainbow]: (ctx, phase = 0, base = [1, 1, 1], params) =>

@@ -62,6 +62,18 @@
             times: 'numberArray',
             loop: 'boolean',
         },
+        zebra: {
+            colors: 'vec4Array',
+            times: 'numberArray',
+            loop: 'boolean',
+        },
+        chase: {
+            colors: 'vec4Array',
+            times: 'numberArray',
+            loop: 'boolean',
+            windowFraction: 'number',
+            reverse: 'boolean',
+        },
         cycleRGB: {
             colors: 'vec4Array',
             times: 'numberArray',
@@ -71,6 +83,7 @@
             colors: 'vec4Array',
             times: 'numberArray',
             loop: 'boolean',
+            windowFraction: 'number',
         },
     };
 
@@ -200,6 +213,27 @@
             loop: {
                 label: 'Зациклить статичный цвет',
                 hint: 'Если выключено — цвет не анимируется',
+            },
+        },
+        rainbow: {
+            windowFraction: {
+                label: 'Ширина окна (доля трека)',
+                hint: '0 — как раньше, >0 — окно, которое распределяется по буквам',
+                min: 0,
+                max: 1,
+                step: 0.01,
+            },
+        },
+        chase: {
+            windowFraction: {
+                label: 'Размер окна (доля текста)',
+                hint: '0 — одна буква, больше — несколько букв одновременно',
+                min: 0,
+                max: 1,
+                step: 0.01,
+            },
+            reverse: {
+                label: 'Обратное направление',
             },
         },
     };
@@ -624,7 +658,9 @@
         const baseColor =
             (Array.isArray(params.baseColor) ? params.baseColor : null) ||
             (Array.isArray(fallbackColor) ? fallbackColor : null);
-        const isStatic = options.isStatic || (desc && desc.type === 'none');
+        const isStatic =
+            options.isStatic ||
+            (desc && (desc.type === 'none' || desc.type === 'zebra'));
 
         if (!Array.isArray(params.colors) || !params.colors.length) {
             const base = baseColor || [1, 1, 1];
@@ -1679,7 +1715,7 @@
             (values && Array.isArray(values.times) && values.times.length
                 ? values.times
                 : options.fallbackTimes) || [];
-        const isStatic = type === 'none';
+        const isStatic = type === 'none' || type === 'zebra';
         if (isStatic) {
             if (!sourceColors.length) sourceColors = [[1, 1, 1, 1]];
             sourceTimes = [0];
@@ -1976,7 +2012,7 @@
 
             row.appendChild(colorInput);
             row.appendChild(alphaWrap);
-            if (!isStatic && count > 1) {
+            if (count > 1 && type !== 'none') {
                 row.appendChild(removeBtn);
             }
             rowsWrap.appendChild(row);
@@ -1994,7 +2030,7 @@
         buttonsWrap.style.gap = '6px';
         buttonsWrap.style.marginTop = '4px';
 
-        if (!isStatic) {
+        if (type !== 'none') {
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
             addBtn.textContent = 'Добавить ключ';
@@ -2030,10 +2066,184 @@
 
         buttonsWrap.appendChild(loopLabel);
 
+        // windowFraction slider for rainbow
+        if (type === 'rainbow') {
+            const meta =
+                (colorParamMeta.rainbow && colorParamMeta.rainbow.windowFraction) || null;
+            const label = document.createElement('label');
+            label.style.display = 'flex';
+            label.style.flexDirection = 'column';
+            label.style.gap = '2px';
+            label.style.fontSize = '11px';
+            const header = document.createElement('div');
+            header.className = 'param-label-row';
+            const title = document.createElement('span');
+            title.textContent = (meta && meta.label) || 'Ширина окна';
+            if (meta && meta.hint) {
+                label.title = meta.hint;
+            }
+            header.appendChild(title);
+            label.appendChild(header);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'slider-with-input';
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.step = String((meta && meta.step) || 0.01);
+            const min = meta && typeof meta.min === 'number' ? meta.min : 0;
+            const max = meta && typeof meta.max === 'number' ? meta.max : 1;
+            slider.min = String(min);
+            slider.max = String(max);
+            const numberInput = document.createElement('input');
+            numberInput.type = 'number';
+            numberInput.step = slider.step;
+            numberInput.min = slider.min;
+            numberInput.max = slider.max;
+            numberInput.dataset.role = 'window-fraction';
+
+            const current =
+                values && typeof values.windowFraction === 'number'
+                    ? values.windowFraction
+                    : '';
+            const defaultVal = '';
+            const applyValue = (v) => {
+                if (v === '' || Number.isNaN(v)) {
+                    slider.value = String(min);
+                    numberInput.value = '';
+                    return;
+                }
+                const clamped = Math.max(min, Math.min(max, v));
+                slider.value = String(clamped);
+                numberInput.value = String(clamped);
+            };
+            if (current !== '') {
+                applyValue(current);
+            } else {
+                numberInput.value = '';
+                slider.value = String(min);
+            }
+
+            slider.addEventListener('input', () => {
+                const v = parseFloat(slider.value);
+                if (Number.isNaN(v)) return;
+                numberInput.value = slider.value;
+            });
+            numberInput.addEventListener('input', () => {
+                const v = parseFloat(numberInput.value);
+                if (Number.isNaN(v)) {
+                    return;
+                }
+                if (v < parseFloat(slider.min)) slider.min = String(v);
+                if (v > parseFloat(slider.max)) slider.max = String(v);
+                slider.value = String(v);
+            });
+
+            wrapper.appendChild(slider);
+            wrapper.appendChild(numberInput);
+            label.appendChild(wrapper);
+
+            header.appendChild(
+                createResetButton(() => {
+                    numberInput.value = defaultVal;
+                    slider.value = String(min);
+                    dispatchParamEvents(numberInput);
+                }),
+            );
+
+            buttonsWrap.appendChild(label);
+        }
+
+        // windowFraction for chase
+        if (type === 'chase') {
+            const meta =
+                (colorParamMeta.chase && colorParamMeta.chase.windowFraction) || null;
+            const label = document.createElement('label');
+            label.style.display = 'flex';
+            label.style.flexDirection = 'column';
+            label.style.gap = '2px';
+            label.style.fontSize = '11px';
+            const header = document.createElement('div');
+            header.className = 'param-label-row';
+            const title = document.createElement('span');
+            title.textContent = (meta && meta.label) || 'Размер окна (доля текста)';
+            if (meta && meta.hint) {
+                label.title = meta.hint;
+            }
+            header.appendChild(title);
+            label.appendChild(header);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'slider-with-input';
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.step = String((meta && meta.step) || 0.01);
+            const minCh = meta && typeof meta.min === 'number' ? meta.min : 0;
+            const maxCh = meta && typeof meta.max === 'number' ? meta.max : 1;
+            slider.min = String(minCh);
+            slider.max = String(maxCh);
+            const numberInput = document.createElement('input');
+            numberInput.type = 'number';
+            numberInput.step = slider.step;
+            numberInput.min = slider.min;
+            numberInput.max = slider.max;
+            numberInput.dataset.role = 'window-fraction';
+
+            const currentCh =
+                values && typeof values.windowFraction === 'number'
+                    ? values.windowFraction
+                    : '';
+            const defaultValCh = '';
+            const applyValueCh = (v) => {
+                if (v === '' || Number.isNaN(v)) {
+                    slider.value = String(minCh);
+                    numberInput.value = '';
+                    return;
+                }
+                const clamped = Math.max(minCh, Math.min(maxCh, v));
+                slider.value = String(clamped);
+                numberInput.value = String(clamped);
+            };
+            if (currentCh !== '') {
+                applyValueCh(currentCh);
+            } else {
+                numberInput.value = '';
+                slider.value = String(minCh);
+            }
+
+            slider.addEventListener('input', () => {
+                const v = parseFloat(slider.value);
+                if (Number.isNaN(v)) return;
+                numberInput.value = slider.value;
+            });
+            numberInput.addEventListener('input', () => {
+                const v = parseFloat(numberInput.value);
+                if (Number.isNaN(v)) {
+                    return;
+                }
+                if (v < parseFloat(slider.min)) slider.min = String(v);
+                if (v > parseFloat(slider.max)) slider.max = String(v);
+                slider.value = String(v);
+            });
+
+            wrapper.appendChild(slider);
+            wrapper.appendChild(numberInput);
+            label.appendChild(wrapper);
+
+            header.appendChild(
+                createResetButton(() => {
+                    numberInput.value = defaultValCh;
+                    slider.value = String(minCh);
+                    dispatchParamEvents(numberInput);
+                }),
+            );
+
+            buttonsWrap.appendChild(label);
+        }
+
         container.appendChild(buttonsWrap);
 
-        // Reverse direction for rainbow
-        if (type === 'rainbow') {
+        // Reverse direction for rainbow / chase
+        if (type === 'rainbow' || type === 'chase') {
             const reverseLabel = document.createElement('label');
             reverseLabel.style.display = 'flex';
             reverseLabel.style.alignItems = 'center';
@@ -2117,7 +2327,7 @@
             const colorInput = row.querySelector('input[data-role="color"]');
             const timeInput = row.querySelector('input[data-role="time"]');
             const alphaInput = row.querySelector('input[data-role="alpha"]');
-            if (!colorInput || (!timeInput && type !== 'none')) return;
+            if (!colorInput || (!timeInput && type !== 'none' && type !== 'zebra')) return;
             const hex = colorInput.value || '#ffffff';
             const parseAlphaValue = (val) => {
                 const num = parseFloat(val);
@@ -2161,6 +2371,18 @@
             times,
             loop,
         };
+
+        if (type === 'rainbow' || type === 'chase') {
+            const windowInput = container.querySelector(
+                'input[type="number"][data-role="window-fraction"]',
+            );
+            if (windowInput) {
+                const v = parseFloat(windowInput.value);
+                if (Number.isFinite(v)) {
+                    result.windowFraction = v;
+                }
+            }
+        }
 
         if (options.isStroke) {
             const strokeInput = container.querySelector('input[data-role="stroke-width"]');
@@ -2694,6 +2916,7 @@
             fillSelect(colorSelect, [
                 { value: '', label: '—' },
                 { value: 'none', label: 'None' },
+                { value: 'zebra', label: 'Zebra' },
                 { value: 'cycleRGB', label: 'CycleRGB' },
                 { value: 'rainbow', label: 'Rainbow' },
             ]);
@@ -2710,6 +2933,7 @@
             fillSelect(strokeSelect, [
                 { value: '', label: '—' },
                 { value: 'none', label: 'None' },
+                { value: 'zebra', label: 'Zebra' },
                 { value: 'cycleRGB', label: 'CycleRGB' },
                 { value: 'rainbow', label: 'Rainbow' },
             ]);
@@ -3628,6 +3852,7 @@
         fillSelect(fillSelectEl, [
             { value: '', label: '—' },
             { value: 'none', label: 'None' },
+            { value: 'zebra', label: 'Zebra' },
             { value: 'cycleRGB', label: 'CycleRGB' },
             { value: 'rainbow', label: 'Rainbow' },
         ]);
@@ -3644,6 +3869,7 @@
         fillSelect(strokeSelectEl, [
             { value: '', label: '—' },
             { value: 'none', label: 'None' },
+            { value: 'zebra', label: 'Zebra' },
             { value: 'cycleRGB', label: 'CycleRGB' },
             { value: 'rainbow', label: 'Rainbow' },
         ]);
@@ -4688,15 +4914,19 @@
         fillSelect($('colorType'), [
             { value: '', label: '— Отключено —' },
             { value: 'none', label: 'None (статичный)' },
+            { value: 'zebra', label: 'Zebra (по буквам)' },
             { value: 'cycleRGB', label: 'CycleRGB' },
             { value: 'rainbow', label: 'Rainbow' },
+            { value: 'chase', label: 'Огонёк (по буквам)' },
         ]);
         $('colorType').value = 'none';
         fillSelect($('strokeType'), [
             { value: '', label: '— Отключено —' },
             { value: 'none', label: 'None (статичный)' },
+            { value: 'zebra', label: 'Zebra (по буквам)' },
             { value: 'cycleRGB', label: 'CycleRGB' },
             { value: 'rainbow', label: 'Rainbow' },
+            { value: 'chase', label: 'Огонёк (по буквам)' },
         ]);
         $('strokeType').value = 'none';
         fillSelect($('letterType'), [

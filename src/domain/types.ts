@@ -24,6 +24,8 @@ export enum ColorAnimationType {
     None = 'none',
     CycleRGB = 'cycleRGB',
     Rainbow = 'rainbow',
+    Zebra = 'zebra',
+    Chase = 'chase',
 }
 
 export enum LetterAnimationType {
