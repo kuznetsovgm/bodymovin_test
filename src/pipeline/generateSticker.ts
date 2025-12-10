@@ -67,6 +67,8 @@ import { minifySticker } from '../shared/lottieMinifier';
 
 type LayoutGlyphWithCurve = ReturnType<typeof layoutText>[number] & {
     curveScale?: number;
+    curveScaleX?: number;
+    curveScaleY?: number;
     curveRotation?: number;
 };
 
@@ -248,8 +250,10 @@ function buildLettersGroup(
 
     // Layer-level style (applied once per group)
     for (const glyphInfo of layout) {
-        const { char: ch, glyph, x, y, letterIndex, curveScale, curveRotation } = glyphInfo;
-        const letterScale = Math.max(0.01, curveScale ?? 1);
+        const { char: ch, glyph, x, y, letterIndex, curveScale, curveScaleX, curveScaleY, curveRotation } = glyphInfo;
+        const targetScaleX = curveScaleX ?? curveScale ?? 1;
+        const targetScaleY = curveScaleY ?? curveScale ?? 1;
+        const letterScale = Math.max(0.01, (targetScaleX + targetScaleY) * 0.5);
         const letterFontSize = fontSize * letterScale;
         const bbox = glyph.getBoundingBox();
         const unitsPerEm = font.unitsPerEm || 1000;
@@ -264,6 +268,8 @@ function buildLettersGroup(
             seed,
         });
 
+        const anisotropicX = letterScale > 0 ? targetScaleX / letterScale : 1;
+        const anisotropicY = letterScale > 0 ? targetScaleY / letterScale : 1;
         const transform = applyLetterAnimations(letterAnimations, {
             letterIndex,
             x,
@@ -274,6 +280,8 @@ function buildLettersGroup(
             anchorY,
             lettersCount,
             scaleFactor: letterScale,
+            curveScaleX: anisotropicX,
+            curveScaleY: anisotropicY,
             curveRotation,
         });
 
@@ -408,21 +416,35 @@ function applyTextCurve(
             const horizontalFactor = Math.max(0, cosTheta);
             const verticalFactor = Math.max(0, cosPhi);
             const depth = clamp(0.6 * horizontalFactor + 0.4 * verticalFactor, 0, 1);
+            const horizontalRange = clamp(textCurve.sphereHorizontalRange ?? 0.7, 0, 2);
+            const verticalRangeBase = clamp(textCurve.sphereVerticalRange ?? 0.4, 0, 2);
             const edgeScale = 0.5;
-            const scaleRange = 0.7 * sphereScaleFactor;
+            const scaleRange = horizontalRange * sphereScaleFactor;
             const horizontalDistance = Math.min(1, Math.abs(centeredX) / radius);
             const edgeDropFactor = clamp(textCurve.sphereEdgeDrop ?? 0.2, 0, 1);
             const edgeDrop = horizontalDistance * edgeDropFactor;
-            const scale = clamp(edgeScale + scaleRange * depth - edgeDrop, 0.1, 2);
+            const horizontalScale = clamp(edgeScale + scaleRange * depth - edgeDrop, 0.1, 2);
+            const verticalStrength = Math.abs(sinPhi);
+            const verticalRange = verticalRangeBase * sphereScaleFactor;
+            const verticalScale = clamp(1 + verticalRange * verticalStrength, 0.1, 2);
             const rotationDir = centeredY > 0 ? -1 : 1;
             const rotationStrength = Math.abs(sinPhi);
             const rotationDeg =
                 rotateLetters && rotationStrength > 0 ? theta * degPerRad * rotationDir * rotationStrength : undefined;
+            const narrowScale = Math.max(0, 1 - horizontalScale);
+            const narrowStrength = Math.max(0, textCurve.sphereNarrowShift ?? 1);
+            const narrowShiftFactor = Math.min(
+                1,
+                (Math.pow(narrowScale, 1.7) * 1.2 + narrowScale * 0.3) * narrowStrength,
+            );
+            const narrowShift = Math.sign(centeredX) * (glyph.advance || 0) * narrowShiftFactor;
             return {
                 ...glyph,
-                x: sphereX - advanceHalf,
+                x: sphereX - advanceHalf - narrowShift,
                 y: sphereY,
-                curveScale: scale,
+                curveScale: (horizontalScale + verticalScale) / 2,
+                curveScaleX: horizontalScale,
+                curveScaleY: verticalScale,
                 curveRotation: rotationDeg,
             };
         });

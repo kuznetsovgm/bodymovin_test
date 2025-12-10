@@ -57,6 +57,9 @@ export type TextCurveOptions = {
     radius?: number;
     sphereScaleFactor?: number;
     sphereEdgeDrop?: number;
+    sphereHorizontalRange?: number;
+    sphereVerticalRange?: number;
+    sphereNarrowShift?: number;
     rotateLetters?: boolean;
 };
 
@@ -232,6 +235,8 @@ export type LetterContext = {
     lettersCount?: number;
     scaleFactor?: number;
     curveRotation?: number;
+    curveScaleX?: number;
+    curveScaleY?: number;
 };
 export type ColorContext = { duration: number };
 

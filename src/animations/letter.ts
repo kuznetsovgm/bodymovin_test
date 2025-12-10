@@ -187,20 +187,43 @@ export function applyLetterAnimations(
     }, null) as TransformShape;
     const scaleFactor = Math.max(0, typeof ctx.scaleFactor === 'number' ? ctx.scaleFactor : 1);
     const scaled = scaleFactor === 1 ? composed : applyScaleFactorToTransform(composed, scaleFactor);
+    const anisotropicX = typeof ctx.curveScaleX === 'number' ? ctx.curveScaleX : 1;
+    const anisotropicY = typeof ctx.curveScaleY === 'number' ? ctx.curveScaleY : 1;
+    const anisotropic =
+        Math.abs(anisotropicX - 1) > 1e-6 || Math.abs(anisotropicY - 1) > 1e-6;
+    const scaledWithAxis = anisotropic
+        ? applyAxisScaleToTransform(scaled, anisotropicX, anisotropicY)
+        : scaled;
     const rotationDeg = typeof ctx.curveRotation === 'number' ? ctx.curveRotation : 0;
-    return Math.abs(rotationDeg) < 1e-6 ? scaled : applyCurveRotationToTransform(scaled, rotationDeg);
+    return Math.abs(rotationDeg) < 1e-6
+        ? scaledWithAxis
+        : applyCurveRotationToTransform(scaledWithAxis, rotationDeg);
+}
+
+function applyAxisScaleToTransform(
+    transform: TransformShape,
+    scaleX: number,
+    scaleY: number,
+): TransformShape {
+    if (!transform) return transform;
+    if (Math.abs(scaleX - 1) < 1e-6 && Math.abs(scaleY - 1) < 1e-6) return transform;
+    const scaled: TransformShape = { ...transform };
+    if (transform.s) {
+        scaled.s = scaleMultiDimensional(transform.s, scaleX, scaleY);
+    }
+    return scaled;
 }
 
 function applyScaleFactorToTransform(transform: TransformShape, scaleFactor: number): TransformShape {
     if (!transform || scaleFactor === 1) return transform;
     const scaled: TransformShape = { ...transform };
     if (transform.s) {
-        scaled.s = scaleMultiDimensional(transform.s, scaleFactor);
+        scaled.s = scaleMultiDimensional(transform.s, scaleFactor, scaleFactor);
     }
     return scaled;
 }
 
-function scaleMultiDimensional(value: MultiDimensional, factor: number): MultiDimensional {
+function scaleMultiDimensional(value: MultiDimensional, scaleX: number, scaleY: number): MultiDimensional {
     if (!value || !Array.isArray(value.k)) return value;
     const scaled: MultiDimensional = { ...value };
     if (value.k.length === 0) {
@@ -209,23 +232,33 @@ function scaleMultiDimensional(value: MultiDimensional, factor: number): MultiDi
     }
     const first = value.k[0];
     if (typeof first === 'number') {
-        scaled.k = (value.k as number[]).map((v) => v * factor);
+        scaled.k = (value.k as number[]).map((v, idx) =>
+            idx === 0 ? v * scaleX : idx === 1 ? v * scaleY : v,
+        );
         return scaled;
     }
-    scaled.k = (value.k as Keyframe<number[]>[]).map((kf) => scaleKeyframe(kf, factor));
+    scaled.k = (value.k as Keyframe<number[]>[]).map((kf) => scaleKeyframe(kf, scaleX, scaleY));
     return scaled;
 }
 
-function scaleKeyframe(kf: Keyframe<number[]>, factor: number): Keyframe<number[]> {
+function scaleKeyframe(kf: Keyframe<number[]>, scaleX: number, scaleY: number): Keyframe<number[]> {
     return {
         ...kf,
-        s: scaleVector(kf.s, factor),
-        e: kf.e !== undefined ? scaleVector(kf.e, factor) : undefined,
+        s: scaleVector(kf.s, scaleX, scaleY),
+        e: kf.e !== undefined ? scaleVector(kf.e, scaleX, scaleY) : undefined,
     };
 }
 
-function scaleVector(value: number[], factor: number): number[] {
-    return value.map((v) => v * factor);
+function scaleVector(value: number[], scaleX: number, scaleY: number): number[] {
+    if (!value || value.length === 0) return value;
+    const scaled = [...value];
+    if (scaled.length > 0) {
+        scaled[0] = scaled[0] * scaleX;
+    }
+    if (scaled.length > 1) {
+        scaled[1] = scaled[1] * scaleY;
+    }
+    return scaled;
 }
 
 function applyCurveRotationToTransform(transform: TransformShape, rotationDeg: number): TransformShape {

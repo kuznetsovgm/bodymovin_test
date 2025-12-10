@@ -34,6 +34,9 @@
             radius: 0,
             sphereScaleFactor: 1,
             sphereEdgeDrop: 0.2,
+            sphereHorizontalRange: 0.7,
+            sphereVerticalRange: 0.4,
+            sphereNarrowShift: 1,
             rotateLetters: true,
         },
         activeOverlayTarget: 'text',
@@ -3478,6 +3481,9 @@
             radius: 0,
             sphereScaleFactor: 1,
             sphereEdgeDrop: 0.2,
+            sphereHorizontalRange: 0.7,
+            sphereVerticalRange: 0.4,
+            sphereNarrowShift: 1,
             rotateLetters: true,
         };
         if ($('textCurveMode')) $('textCurveMode').value = normalizeTextCurveMode(curve.mode);
@@ -3488,6 +3494,16 @@
             );
         if ($('textCurveEdgeDrop'))
             $('textCurveEdgeDrop').value = formatNumberValue(curve.sphereEdgeDrop != null ? curve.sphereEdgeDrop : 0.2);
+        if ($('textCurveHorizontalRange'))
+            $('textCurveHorizontalRange').value = formatNumberValue(
+                curve.sphereHorizontalRange != null ? curve.sphereHorizontalRange : 0.7,
+            );
+        if ($('textCurveVerticalRange'))
+            $('textCurveVerticalRange').value = formatNumberValue(
+                curve.sphereVerticalRange != null ? curve.sphereVerticalRange : 0.4,
+            );
+        if ($('textCurveNarrowShift'))
+            $('textCurveNarrowShift').value = formatNumberValue(curve.sphereNarrowShift != null ? curve.sphereNarrowShift : 1);
         if ($('textCurveRotate')) $('textCurveRotate').checked = curve.rotateLetters !== false;
         updateTextCurveControlVisibility(normalizeTextCurveMode(curve.mode));
     }
@@ -3497,6 +3513,9 @@
         const sphereWrapper = $('textCurveSphereScaleWrapper');
         const rotateWrapper = $('textCurveRotateWrapper');
         const edgeDropWrapper = $('textCurveEdgeDropWrapper');
+        const horizontalWrapper = $('textCurveHorizontalRangeWrapper');
+        const verticalWrapper = $('textCurveVerticalRangeWrapper');
+        const narrowWrapper = $('textCurveNarrowShiftWrapper');
         if (radiusWrapper) {
             radiusWrapper.style.display = mode === 'none' ? 'none' : '';
         }
@@ -3509,6 +3528,15 @@
         if (edgeDropWrapper) {
             edgeDropWrapper.style.display = mode === 'sphere' ? '' : 'none';
         }
+        if (horizontalWrapper) {
+            horizontalWrapper.style.display = mode === 'sphere' ? '' : 'none';
+        }
+        if (verticalWrapper) {
+            verticalWrapper.style.display = mode === 'sphere' ? '' : 'none';
+        }
+        if (narrowWrapper) {
+            narrowWrapper.style.display = mode === 'sphere' ? '' : 'none';
+        }
     }
 
     function updateTextCurveFromInputs() {
@@ -3516,6 +3544,9 @@
         const radiusInput = $('textCurveRadius');
         const sphereScaleInput = $('textCurveSphereScale');
         const edgeDropInput = $('textCurveEdgeDrop');
+        const horizontalRangeInput = $('textCurveHorizontalRange');
+        const verticalRangeInput = $('textCurveVerticalRange');
+        const narrowShiftInput = $('textCurveNarrowShift');
         const rotateInput = $('textCurveRotate');
         const mode = normalizeTextCurveMode(modeSelect ? modeSelect.value : 'none');
         const radius =
@@ -3530,6 +3561,18 @@
             edgeDropInput && edgeDropInput.value
                 ? Math.max(0, Math.min(1, parseFloat(edgeDropInput.value) || 0))
                 : 0.2;
+        const horizontalRange =
+            horizontalRangeInput && horizontalRangeInput.value
+                ? Math.max(0, Math.min(2, parseFloat(horizontalRangeInput.value) || 0))
+                : 0.7;
+        const verticalRange =
+            verticalRangeInput && verticalRangeInput.value
+                ? Math.max(0, Math.min(2, parseFloat(verticalRangeInput.value) || 0))
+                : 0.4;
+        const narrowShift =
+            narrowShiftInput && narrowShiftInput.value
+                ? Math.max(0, Math.min(3, parseFloat(narrowShiftInput.value) || 0))
+                : 1;
         const rotateLetters = rotateInput ? rotateInput.checked : true;
         const prev =
             state.textCurve || {
@@ -3537,6 +3580,9 @@
                 radius: 0,
                 sphereScaleFactor: 1,
                 sphereEdgeDrop: 0.2,
+                sphereHorizontalRange: 0.7,
+                sphereVerticalRange: 0.4,
+                sphereNarrowShift: 1,
                 rotateLetters: true,
             };
         const next = {
@@ -3544,15 +3590,30 @@
             radius,
             sphereScaleFactor: sphereScale,
             sphereEdgeDrop: edgeDrop,
+            sphereHorizontalRange: horizontalRange,
+            sphereVerticalRange: verticalRange,
+            sphereNarrowShift: narrowShift,
             rotateLetters,
         };
         const radiusChanged = !numbersAreClose(prev.radius, next.radius);
         const modeChanged = prev.mode !== next.mode;
         const scaleChanged = !numbersAreClose(prev.sphereScaleFactor, next.sphereScaleFactor);
         const edgeChanged = !numbersAreClose(prev.sphereEdgeDrop ?? 0, next.sphereEdgeDrop ?? 0);
+        const horizontalChanged = !numbersAreClose(prev.sphereHorizontalRange ?? 0, next.sphereHorizontalRange ?? 0);
+        const verticalChanged = !numbersAreClose(prev.sphereVerticalRange ?? 0, next.sphereVerticalRange ?? 0);
+        const narrowChanged = !numbersAreClose(prev.sphereNarrowShift ?? 0, next.sphereNarrowShift ?? 0);
         const rotateChanged = prev.rotateLetters !== next.rotateLetters;
         updateTextCurveControlVisibility(mode);
-        if (modeChanged || radiusChanged || scaleChanged || edgeChanged || rotateChanged) {
+        if (
+            modeChanged ||
+            radiusChanged ||
+            scaleChanged ||
+            edgeChanged ||
+            horizontalChanged ||
+            verticalChanged ||
+            narrowChanged ||
+            rotateChanged
+        ) {
             state.textCurve = next;
             updateBackgroundOverlay();
             renderPreviewLayersList();
@@ -3587,6 +3648,45 @@
             sphereScaleReset.addEventListener('click', (event) => {
                 event.preventDefault();
                 sphereScaleInput.value = formatNumberValue(1);
+                updateTextCurveFromInputs();
+            });
+        }
+        const horizontalRangeInput = $('textCurveHorizontalRange');
+        if (horizontalRangeInput) {
+            horizontalRangeInput.addEventListener('input', updateTextCurveFromInputs);
+            horizontalRangeInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const horizontalRangeReset = $('textCurveHorizontalRangeReset');
+        if (horizontalRangeReset && horizontalRangeInput) {
+            horizontalRangeReset.addEventListener('click', (event) => {
+                event.preventDefault();
+                horizontalRangeInput.value = formatNumberValue(0.7);
+                updateTextCurveFromInputs();
+            });
+        }
+        const verticalRangeInput = $('textCurveVerticalRange');
+        if (verticalRangeInput) {
+            verticalRangeInput.addEventListener('input', updateTextCurveFromInputs);
+            verticalRangeInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const verticalRangeReset = $('textCurveVerticalRangeReset');
+        if (verticalRangeReset && verticalRangeInput) {
+            verticalRangeReset.addEventListener('click', (event) => {
+                event.preventDefault();
+                verticalRangeInput.value = formatNumberValue(0.4);
+                updateTextCurveFromInputs();
+            });
+        }
+        const narrowShiftInput = $('textCurveNarrowShift');
+        if (narrowShiftInput) {
+            narrowShiftInput.addEventListener('input', updateTextCurveFromInputs);
+            narrowShiftInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const narrowShiftReset = $('textCurveNarrowShiftReset');
+        if (narrowShiftReset && narrowShiftInput) {
+            narrowShiftReset.addEventListener('click', (event) => {
+                event.preventDefault();
+                narrowShiftInput.value = formatNumberValue(1);
                 updateTextCurveFromInputs();
             });
         }
@@ -4590,11 +4690,23 @@
         const textCurveEdgeDrop = $('textCurveEdgeDrop')
             ? Math.max(0, Math.min(1, parseFloat($('textCurveEdgeDrop').value) || 0))
             : 0.2;
+        const textCurveHorizontalRange = $('textCurveHorizontalRange')
+            ? Math.max(0, Math.min(2, parseFloat($('textCurveHorizontalRange').value) || 0))
+            : 0.7;
+        const textCurveVerticalRange = $('textCurveVerticalRange')
+            ? Math.max(0, Math.min(2, parseFloat($('textCurveVerticalRange').value) || 0))
+            : 0.4;
+        const textCurveNarrowShift = $('textCurveNarrowShift')
+            ? Math.max(0, Math.min(3, parseFloat($('textCurveNarrowShift').value) || 0))
+            : 1;
         const textCurveState = {
             mode: textCurveMode,
             radius: textCurveRadius,
             sphereScaleFactor: textCurveSphereScale,
             sphereEdgeDrop: textCurveEdgeDrop,
+            sphereHorizontalRange: textCurveHorizontalRange,
+            sphereVerticalRange: textCurveVerticalRange,
+            sphereNarrowShift: textCurveNarrowShift,
             rotateLetters: textCurveRotate,
         };
         state.textCurve = { ...textCurveState };
@@ -4782,6 +4894,18 @@
                 typeof curve.sphereEdgeDrop === 'number' && Number.isFinite(curve.sphereEdgeDrop)
                     ? clampNumber(curve.sphereEdgeDrop, 0, 1)
                     : 0.2,
+            sphereHorizontalRange:
+                typeof curve.sphereHorizontalRange === 'number' && Number.isFinite(curve.sphereHorizontalRange)
+                    ? clampNumber(curve.sphereHorizontalRange, 0, 2)
+                    : 0.7,
+            sphereVerticalRange:
+                typeof curve.sphereVerticalRange === 'number' && Number.isFinite(curve.sphereVerticalRange)
+                    ? clampNumber(curve.sphereVerticalRange, 0, 2)
+                    : 0.4,
+            sphereNarrowShift:
+                typeof curve.sphereNarrowShift === 'number' && Number.isFinite(curve.sphereNarrowShift)
+                    ? clampNumber(curve.sphereNarrowShift, 0, 3)
+                    : 1,
             rotateLetters: curve.rotateLetters !== false,
         };
         syncTextCurveInputsFromState();
@@ -5352,6 +5476,9 @@
                 radius: 0,
                 sphereScaleFactor: 1,
                 sphereEdgeDrop: 0.2,
+                sphereHorizontalRange: 0.7,
+                sphereVerticalRange: 0.4,
+                sphereNarrowShift: 1,
                 rotateLetters: true,
             };
             syncTextCurveInputsFromState();
