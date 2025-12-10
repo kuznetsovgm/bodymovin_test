@@ -109,7 +109,12 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         width,
         height,
     );
-    const curvedLayout = applyTextCurve(layout, textCurve);
+    const curvedLayout = applyTextCurve(
+        layout,
+        textCurve,
+        finalFontSize,
+        fontObj.unitsPerEm,
+    );
 
     const backgroundShapeLayers = await buildBackgroundLayers(
         layout,
@@ -364,6 +369,8 @@ function prepareLayout(
 function applyTextCurve(
     layout: ReturnType<typeof layoutText>,
     textCurve?: TextCurveOptions,
+    finalFontSize?: number,
+    fontUnitsPerEm?: number,
 ): LayoutGlyphWithCurve[] {
     if (!textCurve) {
         return layout.map((glyph) => ({ ...glyph }));
@@ -377,7 +384,7 @@ function applyTextCurve(
         return layout.map((glyph) => ({ ...glyph }));
     }
     const radius = Math.max(1, radiusValue);
-    const { centerX, centerY } = computeLayoutCenterOffsets(layout);
+    const { centerX, centerY } = computeLayoutCenterOffsets(layout, finalFontSize, fontUnitsPerEm);
     const rotateLetters = textCurve.rotateLetters !== false;
     const degPerRad = 180 / Math.PI;
     const sphereScaleFactor = Math.max(0.05, textCurve.sphereScaleFactor ?? 1);
@@ -452,22 +459,39 @@ function applyTextCurve(
     return layout.map((glyph) => ({ ...glyph }));
 }
 
-function computeLayoutCenterOffsets(layout: ReturnType<typeof layoutText>) {
+function computeLayoutCenterOffsets(
+    layout: ReturnType<typeof layoutText>,
+    finalFontSize?: number,
+    fontUnitsPerEm?: number,
+) {
     if (!layout.length) return { centerX: 0, centerY: 0 };
     let sumX = 0;
     let sumY = 0;
     let count = 0;
+    const fontScale =
+        typeof finalFontSize === 'number' &&
+        typeof fontUnitsPerEm === 'number' &&
+        fontUnitsPerEm > 0
+            ? finalFontSize / fontUnitsPerEm
+            : 1;
     for (const glyph of layout) {
         if (!Number.isFinite(glyph.x) || !Number.isFinite(glyph.y)) continue;
         const advanceHalf = (glyph.advance || 0) / 2;
         sumX += glyph.x + advanceHalf;
-        sumY += glyph.y;
+        const bbox = glyph.glyph.getBoundingBox();
+        const bboxCenterY =
+            bbox && Number.isFinite(bbox.y1) && Number.isFinite(bbox.y2)
+                ? glyph.y + ((bbox.y1 + bbox.y2) / 2) * fontScale
+                : glyph.y;
+        sumY += bboxCenterY;
         count++;
     }
     if (!count) return { centerX: 0, centerY: 0 };
+    const centerX = sumX / count;
+    const centerY = sumY / count - (typeof finalFontSize === 'number' ? finalFontSize * 0.5 : 0);
     return {
-        centerX: sumX / count,
-        centerY: sumY / count,
+        centerX,
+        centerY,
     };
 }
 
