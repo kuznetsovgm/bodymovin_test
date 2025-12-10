@@ -46,6 +46,20 @@ export enum PathMorphAnimationType {
     SkewSwing = 'skewSwing',
 }
 
+export enum TextCurveMode {
+    None = 'none',
+    Arc = 'arc',
+    Sphere = 'sphere',
+}
+
+export type TextCurveOptions = {
+    mode?: TextCurveMode;
+    radius?: number;
+    sphereScaleFactor?: number;
+    sphereEdgeDrop?: number;
+    rotateLetters?: boolean;
+};
+
 export enum BackgroundLayerType {
     Solid = 'solid',
     Frame = 'frame',
@@ -216,6 +230,8 @@ export type LetterContext = {
     anchorX?: number;
     anchorY?: number;
     lettersCount?: number;
+    scaleFactor?: number;
+    curveRotation?: number;
 };
 export type ColorContext = { duration: number };
 
@@ -261,6 +277,8 @@ export interface GenerateStickerOptions {
     pathMorphAnimations?: AnimationDescriptor<PathMorphAnimationType, PathMorphAnimationParams>[];
     /** Статичный трансформ для основного текста */
     textTransform?: TextTransformOptions;
+    /** Раскладка текста по дуге/сфере */
+    textCurve?: TextCurveOptions;
     backgroundLayers?: BackgroundLayerDescriptor[];
     knockoutBackground?: KnockoutBackgroundOptions;
     /** Имя файла шрифта (в директории fonts) */

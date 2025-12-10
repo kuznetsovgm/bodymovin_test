@@ -7,6 +7,8 @@ export {
     ColorAnimationDescriptor,
     LetterAnimationDescriptor,
     GenerateStickerOptions,
+    TextCurveMode,
+    TextCurveOptions,
     BackgroundLayerType,
     KnockoutBackgroundMode,
 } from './domain/types';

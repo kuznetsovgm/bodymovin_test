@@ -131,11 +131,15 @@ export class StickerConfigManager {
             height: _ignoredHeight,
             fontSize: _ignoredFontSize,
             textTransform,
+            textCurve,
             ...rest
         } = config;
         const sanitized: any = { ...rest };
         if (textTransform !== undefined) {
             sanitized.textTransform = textTransform;
+        }
+        if (textCurve !== undefined) {
+            sanitized.textCurve = textCurve;
         }
         return sanitized as Omit<GenerateStickerOptions, 'text'>;
     }

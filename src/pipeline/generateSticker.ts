@@ -58,10 +58,17 @@ import {
     FrameBackgroundDescriptor,
     LetterContext,
     TextTransformOptions,
+    TextCurveMode,
+    TextCurveOptions,
 } from '../domain/types';
 import { convertOpentypePathToBezier } from '../shapes/bezier';
 import { buildLetterSeed } from '../shared/noise';
 import { minifySticker } from '../shared/lottieMinifier';
+
+type LayoutGlyphWithCurve = ReturnType<typeof layoutText>[number] & {
+    curveScale?: number;
+    curveRotation?: number;
+};
 
 export async function generateSticker(opts: GenerateStickerOptions): Promise<Sticker> {
     const cfg = applyDefaults(opts);
@@ -86,6 +93,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         duration = DEFAULT_DURATION,
         seed = DEFAULT_SEED,
         textTransform,
+        textCurve,
     } = opts;
     const resolvedFontSize = resolveFontSize(text, fontSize, width, height);
     const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
@@ -99,6 +107,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         width,
         height,
     );
+    const curvedLayout = applyTextCurve(layout, textCurve);
 
     const backgroundShapeLayers = await buildBackgroundLayers(
         layout,
@@ -142,7 +151,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
     );
 
     const lettersGroup = buildLettersGroup(
-        layout,
+        curvedLayout,
         fontObj,
         finalFontSize,
         colorAnimations,
@@ -200,7 +209,7 @@ function buildBaseLayer(width: number, height: number, duration: number, name: s
 }
 
 function buildLettersGroup(
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     font: opentype.Font,
     fontSize: number,
     colorAnimations: ColorAnimationDescriptor[] | undefined,
@@ -239,14 +248,16 @@ function buildLettersGroup(
 
     // Layer-level style (applied once per group)
     for (const glyphInfo of layout) {
-        const { char: ch, glyph, x, y, letterIndex } = glyphInfo;
+        const { char: ch, glyph, x, y, letterIndex, curveScale, curveRotation } = glyphInfo;
+        const letterScale = Math.max(0.01, curveScale ?? 1);
+        const letterFontSize = fontSize * letterScale;
         const bbox = glyph.getBoundingBox();
         const unitsPerEm = font.unitsPerEm || 1000;
-        const scale = fontSize / unitsPerEm;
-        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * scale;
-        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * scale);
+        const glyphScale = letterFontSize / unitsPerEm;
+        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * glyphScale;
+        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * glyphScale);
         const pathShapes = glyphToShapes(glyph, ch, letterIndex, {
-            fontSize,
+            fontSize: letterFontSize,
             duration,
             pathMorphAnimation: pickType(pathMorphAnimations, PathMorphAnimationType.None),
             pathMorphAnimations,
@@ -262,6 +273,8 @@ function buildLettersGroup(
             anchorX,
             anchorY,
             lettersCount,
+            scaleFactor: letterScale,
+            curveRotation,
         });
 
         const items: any[] = [...pathShapes];
@@ -338,6 +351,102 @@ function prepareLayout(
     );
     const layout = layoutText(lines, font, finalFontSize);
     return { finalFontSize, layout };
+}
+
+function applyTextCurve(
+    layout: ReturnType<typeof layoutText>,
+    textCurve?: TextCurveOptions,
+): LayoutGlyphWithCurve[] {
+    if (!textCurve) {
+        return layout.map((glyph) => ({ ...glyph }));
+    }
+    const mode = textCurve.mode || TextCurveMode.None;
+    const radiusValue =
+        typeof textCurve.radius === 'number' && Number.isFinite(textCurve.radius)
+            ? textCurve.radius
+            : 0;
+    if (mode === TextCurveMode.None || radiusValue <= 0) {
+        return layout.map((glyph) => ({ ...glyph }));
+    }
+    const radius = Math.max(1, radiusValue);
+    const { centerX, centerY } = computeLayoutCenterOffsets(layout);
+    const rotateLetters = textCurve.rotateLetters !== false;
+    const degPerRad = 180 / Math.PI;
+    const sphereScaleFactor = Math.max(0.05, textCurve.sphereScaleFactor ?? 1);
+
+    if (mode === TextCurveMode.Arc) {
+        return layout.map((glyph) => {
+            const advanceHalf = (glyph.advance || 0) / 2;
+            const centeredX = glyph.x + advanceHalf - centerX;
+            const angle = centeredX / radius;
+            const newCenterX = Math.sin(angle) * radius;
+            const arcBaseY = radius - Math.cos(angle) * radius;
+            const rotationDeg = rotateLetters ? angle * degPerRad : undefined;
+            return {
+                ...glyph,
+                x: newCenterX - advanceHalf,
+                y: arcBaseY + glyph.y - centerY,
+                curveRotation: rotationDeg,
+            };
+        });
+    }
+    if (mode === TextCurveMode.Sphere) {
+        return layout.map((glyph) => {
+            const advanceHalf = (glyph.advance || 0) / 2;
+            const centeredX = glyph.x + advanceHalf - centerX;
+            const centeredY = glyph.y - centerY;
+            const phi = centeredY / radius;
+            const cosPhi = Math.cos(phi);
+            const sinPhi = Math.sin(phi);
+            const parallelRadius = Math.max(0.1, radius * cosPhi);
+            const theta = centeredX / parallelRadius;
+            const cosTheta = Math.cos(theta);
+            const sinTheta = Math.sin(theta);
+            const horizontalArc = parallelRadius - cosTheta * parallelRadius;
+            const sphereX = parallelRadius * sinTheta;
+            const sphereY = radius * sinPhi - horizontalArc * sinPhi;
+            const horizontalFactor = Math.max(0, cosTheta);
+            const verticalFactor = Math.max(0, cosPhi);
+            const depth = clamp(0.6 * horizontalFactor + 0.4 * verticalFactor, 0, 1);
+            const edgeScale = 0.5;
+            const scaleRange = 0.7 * sphereScaleFactor;
+            const horizontalDistance = Math.min(1, Math.abs(centeredX) / radius);
+            const edgeDropFactor = clamp(textCurve.sphereEdgeDrop ?? 0.2, 0, 1);
+            const edgeDrop = horizontalDistance * edgeDropFactor;
+            const scale = clamp(edgeScale + scaleRange * depth - edgeDrop, 0.1, 2);
+            const rotationDir = centeredY > 0 ? -1 : 1;
+            const rotationStrength = Math.abs(sinPhi);
+            const rotationDeg =
+                rotateLetters && rotationStrength > 0 ? theta * degPerRad * rotationDir * rotationStrength : undefined;
+            return {
+                ...glyph,
+                x: sphereX - advanceHalf,
+                y: sphereY,
+                curveScale: scale,
+                curveRotation: rotationDeg,
+            };
+        });
+    }
+    return layout.map((glyph) => ({ ...glyph }));
+}
+
+function computeLayoutCenterOffsets(layout: ReturnType<typeof layoutText>) {
+    if (!layout.length) return { centerX: 0, centerY: 0 };
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const glyph of layout) {
+        if (!Number.isFinite(glyph.x) || !Number.isFinite(glyph.y)) continue;
+        const advanceHalf = (glyph.advance || 0) / 2;
+        sumX += glyph.x + advanceHalf;
+        sumY += glyph.y;
+        count++;
+    }
+    if (!count) return { centerX: 0, centerY: 0 };
+    return {
+        centerX: sumX / count,
+        centerY: sumY / count,
+    };
 }
 
 function resolveFontSize(
@@ -565,8 +674,8 @@ function buildStripesBackground(desc: StripesBackgroundDescriptor, ctx: Backgrou
             desc.params?.colorPhaseStep != null
                 ? (i * desc.params.colorPhaseStep) % 1
                 : stripes <= 1
-                ? 0
-                : i / stripes;
+                    ? 0
+                    : i / stripes;
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,
             letterPhase: phase,
@@ -685,8 +794,8 @@ function buildGlyphPatternBackground(
             desc.params?.colorPhaseStep != null
                 ? (idx * desc.params.colorPhaseStep) % 1
                 : totalCells <= 1
-                ? 0
-                : idx / totalCells;
+                    ? 0
+                    : idx / totalCells;
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,
             letterPhase: phase,
@@ -765,8 +874,8 @@ function buildTextLikeBackground(
         const phase = colorPhaseStep != null
             ? ((idx * colorPhaseStep) % 1)
             : total <= 1
-            ? 0
-            : (total - 1 - idx) / total;
+                ? 0
+                : (total - 1 - idx) / total;
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,
             letterPhase: phase,

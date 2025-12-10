@@ -210,6 +210,83 @@
                   </label>
                 </div>
               </div>
+              <div class="grid grid-3">
+                <label id="textCurveModeWrapper">
+                  <span>Режим</span>
+                  <select id="textCurveMode">
+                    <option value="none">Прямо</option>
+                    <option value="arc">Дуга</option>
+                    <option value="sphere">Сфера</option>
+                  </select>
+                </label>
+                <label id="textCurveRadiusWrapper">
+                  <span class="param-label-row">
+                    <span>Радиус</span>
+                    <button
+                      id="textCurveRadiusReset"
+                      class="param-reset-btn"
+                      type="button"
+                      title="Сбросить радиус"
+                    >↺</button>
+                  </span>
+                  <input
+                    id="textCurveRadius"
+                    type="number"
+                    step="10"
+                    min="0"
+                    value="0"
+                  />
+                </label>
+                <label id="textCurveSphereScaleWrapper">
+                  <span class="param-label-row">
+                    <span>Сферический масштаб</span>
+                    <button
+                      id="textCurveSphereScaleReset"
+                      class="param-reset-btn"
+                      type="button"
+                      title="Сбросить сферический масштаб"
+                    >↺</button>
+                  </span>
+                  <input
+                    id="textCurveSphereScale"
+                    type="number"
+                    step="0.05"
+                    min="0.2"
+                    max="3"
+                    value="1"
+                  />
+                </label>
+              </div>
+              <div class="grid grid-3">
+                <label id="textCurveRotateWrapper">
+                  <input
+                    id="textCurveRotate"
+                    type="checkbox"
+                    checked
+                  />
+                  Поворачивать буквы по кривой
+                </label>
+                <label id="textCurveEdgeDropWrapper">
+                  <span class="param-label-row">
+                    <span>Уменьшение краёв</span>
+                    <button
+                      id="textCurveEdgeDropReset"
+                      class="param-reset-btn"
+                      type="button"
+                      title="Сбросить уменьшение краёв"
+                    >↺</button>
+                  </span>
+                  <input
+                    id="textCurveEdgeDrop"
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    value="0.2"
+                  />
+                </label>
+                <div></div>
+              </div>
             </div>
 
             <div class="form-section" id="backgroundLayersSection">

@@ -1,6 +1,13 @@
-import { TransformShape, ShapeType } from '../interfaces/lottie';
+import { TransformShape, ShapeType, MultiDimensional, OffsetKeyframe } from '../interfaces/lottie';
 import { ComposeFn, LetterAnimationDescriptor, LetterAnimationType, LetterContext } from '../domain/types';
-import { buildRawKeyframes, buildValueKeyframes, buildVecTrack, linearIn, linearOut } from '../shared/keyframes';
+import {
+    buildRawKeyframes,
+    buildValueKeyframes,
+    buildVecTrack,
+    Keyframe,
+    linearIn,
+    linearOut,
+} from '../shared/keyframes';
 import { FRACTION_DIGITS, letterAnimationConfig } from '../config/animation-config';
 
 function createBaseTransform(index: number, x: number, y: number, anchorX = 0, anchorY = 0): TransformShape {
@@ -172,12 +179,101 @@ export function applyLetterAnimations(
 ): TransformShape {
     const list = descs && descs.length ? descs : [{ type: LetterAnimationType.None }];
     const sorted = [...list].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-    return sorted.reduce<TransformShape | null>((acc, desc) => {
+    const composed = sorted.reduce<TransformShape | null>((acc, desc) => {
         const next = buildLetterTransform(desc.type, ctx, desc.params);
         if (!acc) return next;
         const compose = desc.compose as ComposeFn<TransformShape, LetterContext> | undefined;
         return compose ? compose(acc, next, ctx) : next;
     }, null) as TransformShape;
+    const scaleFactor = Math.max(0, typeof ctx.scaleFactor === 'number' ? ctx.scaleFactor : 1);
+    const scaled = scaleFactor === 1 ? composed : applyScaleFactorToTransform(composed, scaleFactor);
+    const rotationDeg = typeof ctx.curveRotation === 'number' ? ctx.curveRotation : 0;
+    return Math.abs(rotationDeg) < 1e-6 ? scaled : applyCurveRotationToTransform(scaled, rotationDeg);
+}
+
+function applyScaleFactorToTransform(transform: TransformShape, scaleFactor: number): TransformShape {
+    if (!transform || scaleFactor === 1) return transform;
+    const scaled: TransformShape = { ...transform };
+    if (transform.s) {
+        scaled.s = scaleMultiDimensional(transform.s, scaleFactor);
+    }
+    return scaled;
+}
+
+function scaleMultiDimensional(value: MultiDimensional, factor: number): MultiDimensional {
+    if (!value || !Array.isArray(value.k)) return value;
+    const scaled: MultiDimensional = { ...value };
+    if (value.k.length === 0) {
+        scaled.k = [];
+        return scaled;
+    }
+    const first = value.k[0];
+    if (typeof first === 'number') {
+        scaled.k = (value.k as number[]).map((v) => v * factor);
+        return scaled;
+    }
+    scaled.k = (value.k as Keyframe<number[]>[]).map((kf) => scaleKeyframe(kf, factor));
+    return scaled;
+}
+
+function scaleKeyframe(kf: Keyframe<number[]>, factor: number): Keyframe<number[]> {
+    return {
+        ...kf,
+        s: scaleVector(kf.s, factor),
+        e: kf.e !== undefined ? scaleVector(kf.e, factor) : undefined,
+    };
+}
+
+function scaleVector(value: number[], factor: number): number[] {
+    return value.map((v) => v * factor);
+}
+
+function applyCurveRotationToTransform(transform: TransformShape, rotationDeg: number): TransformShape {
+    if (!transform) return transform;
+    if (!rotationDeg) return transform;
+    const rotated: TransformShape = { ...transform };
+    const existing = transform.r || { a: 0, k: 0 };
+    rotated.r = {
+        ...existing,
+        k: addRotationValue(existing.k, rotationDeg),
+    };
+    return rotated;
+}
+
+function addRotationValue(
+    value: number | number[] | OffsetKeyframe[] | undefined,
+    delta: number,
+): number | number[] | OffsetKeyframe[] {
+    if (value === undefined) return delta;
+    if (typeof value === 'number') {
+        return value + delta;
+    }
+    if (Array.isArray(value)) {
+        if (isOffsetKeyframeArray(value)) {
+            const kfArray = value as OffsetKeyframe[];
+            const rotated = kfArray.map((kf) => ({
+                ...kf,
+                s: addRotationValue(kf.s as number | number[] | undefined, delta) as number | number[],
+                e:
+                    kf.e !== undefined
+                        ? (addRotationValue(kf.e as number | number[] | undefined, delta) as number | number[])
+                        : undefined,
+            })) as OffsetKeyframe[];
+            return rotated;
+        }
+        const numbers = value as number[];
+        return numbers.map((entry) => entry + delta);
+    }
+    return value;
+}
+
+function isOffsetKeyframeArray(arr: any[]): arr is OffsetKeyframe[] {
+    return (
+        arr.length > 0 &&
+        arr[0] !== null &&
+        typeof arr[0] === 'object' &&
+        't' in arr[0]
+    );
 }
 
 // Compose helper for letter transforms (mixes position/scale/rotation/opacities)

@@ -29,6 +29,13 @@
             offsetX: 0,
             offsetY: 0,
         },
+        textCurve: {
+            mode: 'none',
+            radius: 0,
+            sphereScaleFactor: 1,
+            sphereEdgeDrop: 0.2,
+            rotateLetters: true,
+        },
         activeOverlayTarget: 'text',
         variantPreview: {
             activeId: null,
@@ -3460,6 +3467,148 @@
         if ($('textOffsetY')) $('textOffsetY').value = formatNumberValue(t.offsetY != null ? t.offsetY : 0);
     }
 
+    function normalizeTextCurveMode(mode) {
+        if (mode === 'arc' || mode === 'sphere') return mode;
+        return 'none';
+    }
+
+    function syncTextCurveInputsFromState() {
+        const curve = state.textCurve || {
+            mode: 'none',
+            radius: 0,
+            sphereScaleFactor: 1,
+            sphereEdgeDrop: 0.2,
+            rotateLetters: true,
+        };
+        if ($('textCurveMode')) $('textCurveMode').value = normalizeTextCurveMode(curve.mode);
+        if ($('textCurveRadius')) $('textCurveRadius').value = formatNumberValue(curve.radius != null ? curve.radius : 0);
+        if ($('textCurveSphereScale'))
+            $('textCurveSphereScale').value = formatNumberValue(
+                curve.sphereScaleFactor != null ? curve.sphereScaleFactor : 1,
+            );
+        if ($('textCurveEdgeDrop'))
+            $('textCurveEdgeDrop').value = formatNumberValue(curve.sphereEdgeDrop != null ? curve.sphereEdgeDrop : 0.2);
+        if ($('textCurveRotate')) $('textCurveRotate').checked = curve.rotateLetters !== false;
+        updateTextCurveControlVisibility(normalizeTextCurveMode(curve.mode));
+    }
+
+    function updateTextCurveControlVisibility(mode) {
+        const radiusWrapper = $('textCurveRadiusWrapper');
+        const sphereWrapper = $('textCurveSphereScaleWrapper');
+        const rotateWrapper = $('textCurveRotateWrapper');
+        const edgeDropWrapper = $('textCurveEdgeDropWrapper');
+        if (radiusWrapper) {
+            radiusWrapper.style.display = mode === 'none' ? 'none' : '';
+        }
+        if (sphereWrapper) {
+            sphereWrapper.style.display = mode === 'sphere' ? '' : 'none';
+        }
+        if (rotateWrapper) {
+            rotateWrapper.style.display = mode === 'none' ? 'none' : '';
+        }
+        if (edgeDropWrapper) {
+            edgeDropWrapper.style.display = mode === 'sphere' ? '' : 'none';
+        }
+    }
+
+    function updateTextCurveFromInputs() {
+        const modeSelect = $('textCurveMode');
+        const radiusInput = $('textCurveRadius');
+        const sphereScaleInput = $('textCurveSphereScale');
+        const edgeDropInput = $('textCurveEdgeDrop');
+        const rotateInput = $('textCurveRotate');
+        const mode = normalizeTextCurveMode(modeSelect ? modeSelect.value : 'none');
+        const radius =
+            radiusInput && radiusInput.value
+                ? Math.max(0, parseFloat(radiusInput.value) || 0)
+                : 0;
+        const sphereScale =
+            sphereScaleInput && sphereScaleInput.value
+                ? Math.max(0.05, parseFloat(sphereScaleInput.value) || 0.05)
+                : 1;
+        const edgeDrop =
+            edgeDropInput && edgeDropInput.value
+                ? Math.max(0, Math.min(1, parseFloat(edgeDropInput.value) || 0))
+                : 0.2;
+        const rotateLetters = rotateInput ? rotateInput.checked : true;
+        const prev =
+            state.textCurve || {
+                mode: 'none',
+                radius: 0,
+                sphereScaleFactor: 1,
+                sphereEdgeDrop: 0.2,
+                rotateLetters: true,
+            };
+        const next = {
+            mode,
+            radius,
+            sphereScaleFactor: sphereScale,
+            sphereEdgeDrop: edgeDrop,
+            rotateLetters,
+        };
+        const radiusChanged = !numbersAreClose(prev.radius, next.radius);
+        const modeChanged = prev.mode !== next.mode;
+        const scaleChanged = !numbersAreClose(prev.sphereScaleFactor, next.sphereScaleFactor);
+        const edgeChanged = !numbersAreClose(prev.sphereEdgeDrop ?? 0, next.sphereEdgeDrop ?? 0);
+        const rotateChanged = prev.rotateLetters !== next.rotateLetters;
+        updateTextCurveControlVisibility(mode);
+        if (modeChanged || radiusChanged || scaleChanged || edgeChanged || rotateChanged) {
+            state.textCurve = next;
+            updateBackgroundOverlay();
+            renderPreviewLayersList();
+        }
+    }
+
+    function initTextCurveControls() {
+        const modeSelect = $('textCurveMode');
+        if (modeSelect) {
+            modeSelect.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const radiusInput = $('textCurveRadius');
+        if (radiusInput) {
+            radiusInput.addEventListener('input', updateTextCurveFromInputs);
+            radiusInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const resetBtn = $('textCurveRadiusReset');
+        if (resetBtn && radiusInput) {
+            resetBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                radiusInput.value = formatNumberValue(0);
+                updateTextCurveFromInputs();
+            });
+        }
+        const sphereScaleInput = $('textCurveSphereScale');
+        if (sphereScaleInput) {
+            sphereScaleInput.addEventListener('input', updateTextCurveFromInputs);
+            sphereScaleInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const sphereScaleReset = $('textCurveSphereScaleReset');
+        if (sphereScaleReset && sphereScaleInput) {
+            sphereScaleReset.addEventListener('click', (event) => {
+                event.preventDefault();
+                sphereScaleInput.value = formatNumberValue(1);
+                updateTextCurveFromInputs();
+            });
+        }
+        const edgeDropInput = $('textCurveEdgeDrop');
+        if (edgeDropInput) {
+            edgeDropInput.addEventListener('input', updateTextCurveFromInputs);
+            edgeDropInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+        const edgeDropReset = $('textCurveEdgeDropReset');
+        if (edgeDropReset && edgeDropInput) {
+            edgeDropReset.addEventListener('click', (event) => {
+                event.preventDefault();
+                edgeDropInput.value = formatNumberValue(0.2);
+                updateTextCurveFromInputs();
+            });
+        }
+        const rotateInput = $('textCurveRotate');
+        if (rotateInput) {
+            rotateInput.addEventListener('change', updateTextCurveFromInputs);
+        }
+    }
+
     function updateTextTransformFromInputs() {
         const scale = parseFloat($('textScale').value) || 1;
         const rotation = parseFloat($('textRotation').value) || 0;
@@ -4431,6 +4580,25 @@
             offsetY: parseFloat($('textOffsetY').value) || 0,
         };
         state.textTransform = { ...textTransform };
+        const textCurveMode = normalizeTextCurveMode($('textCurveMode').value);
+        const textCurveRadius = Math.max(0, parseFloat($('textCurveRadius').value) || 0);
+        const textCurveSphereScale = Math.max(
+            0.05,
+            parseFloat($('textCurveSphereScale').value) || 0.05,
+        );
+        const textCurveRotate = $('textCurveRotate') ? $('textCurveRotate').checked : true;
+        const textCurveEdgeDrop = $('textCurveEdgeDrop')
+            ? Math.max(0, Math.min(1, parseFloat($('textCurveEdgeDrop').value) || 0))
+            : 0.2;
+        const textCurveState = {
+            mode: textCurveMode,
+            radius: textCurveRadius,
+            sphereScaleFactor: textCurveSphereScale,
+            sphereEdgeDrop: textCurveEdgeDrop,
+            rotateLetters: textCurveRotate,
+        };
+        state.textCurve = { ...textCurveState };
+        updateTextCurveControlVisibility(textCurveMode);
 
         const transformType = $('transformType').value;
         const colorType = $('colorType').value;
@@ -4511,6 +4679,11 @@
         else delete cfg.pathMorphAnimations;
 
         cfg.textTransform = { ...textTransform };
+        if (textCurveState.mode !== 'none' && textCurveState.radius > 0) {
+            cfg.textCurve = { ...textCurveState };
+        } else {
+            delete cfg.textCurve;
+        }
 
         if (state.backgroundMode === 'layers' && Array.isArray(state.backgroundLayers) && state.backgroundLayers.length) {
             const serialized = state.backgroundLayers
@@ -4594,6 +4767,24 @@
             offsetY: textTransform.offsetY != null ? textTransform.offsetY : 0,
         };
         syncTextInputsFromState();
+        const curve = cfg.textCurve || {};
+        state.textCurve = {
+            mode: normalizeTextCurveMode(curve.mode),
+            radius:
+                typeof curve.radius === 'number' && Number.isFinite(curve.radius)
+                    ? Math.max(0, curve.radius)
+                    : 0,
+            sphereScaleFactor:
+                typeof curve.sphereScaleFactor === 'number' && Number.isFinite(curve.sphereScaleFactor)
+                    ? Math.max(0.05, curve.sphereScaleFactor)
+                    : 1,
+            sphereEdgeDrop:
+                typeof curve.sphereEdgeDrop === 'number' && Number.isFinite(curve.sphereEdgeDrop)
+                    ? clampNumber(curve.sphereEdgeDrop, 0, 1)
+                    : 0.2,
+            rotateLetters: curve.rotateLetters !== false,
+        };
+        syncTextCurveInputsFromState();
         updateBackgroundOverlay();
         $('enabled').checked = !!wrapper.enabled;
 
@@ -5131,6 +5322,7 @@
         }
 
         initBackgroundOverlay();
+        updateTextCurveControlVisibility(normalizeTextCurveMode(state.textCurve?.mode || 'none'));
 
         $('newVariantBtn').addEventListener('click', () => {
             state.activeId = null;
@@ -5155,6 +5347,14 @@
             }
             state.textTransform = { scale: 1, rotationDeg: 0, offsetX: 0, offsetY: 0 };
             syncTextInputsFromState();
+            state.textCurve = {
+                mode: 'none',
+                radius: 0,
+                sphereScaleFactor: 1,
+                sphereEdgeDrop: 0.2,
+                rotateLetters: true,
+            };
+            syncTextCurveInputsFromState();
             $('enabled').checked = true;
             $('transformType').value = 'none';
             $('colorType').value = 'none';
@@ -5220,6 +5420,7 @@
             }
         });
         initTextTransformResetButtons();
+        initTextCurveControls();
         const fontSelectEl = $('fontFile');
         if (fontSelectEl) {
             fontSelectEl.addEventListener('change', updateFontFilePreview);
