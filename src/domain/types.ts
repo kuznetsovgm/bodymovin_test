@@ -145,6 +145,8 @@ export type TextLikeBackgroundParams = BackgroundScaleRotateOpacity & {
     cornerRadius?: number;
     /** Сдвиг фазы цвета между буквами (0..1) */
     colorPhaseStep?: number;
+    /** Повторять ли изгиб основного текста (Text Curve) */
+    inheritTextCurve?: boolean;
 };
 
 export type SolidBackgroundDescriptor = BackgroundBase & {

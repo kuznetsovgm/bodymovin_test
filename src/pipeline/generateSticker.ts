@@ -128,6 +128,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
             seed,
         },
         text,
+        textCurve,
     );
 
     const knockoutLayer = buildKnockoutBackgroundLayer(
@@ -567,6 +568,7 @@ async function buildBackgroundLayers(
     font: opentype.Font,
     ctx: BackgroundBuildContext,
     sourceText: string,
+    textCurve?: TextCurveOptions,
 ): Promise<ShapeLayer[]> {
     if (!descs || !descs.length) return [];
 
@@ -599,7 +601,15 @@ async function buildBackgroundLayers(
 
         const fontFileForLayer = extractBackgroundFontFile(desc);
         const bgFont = await resolveBackgroundFont(fontFileForLayer, font, fontCache);
-        const { shapes, transform } = buildBackgroundShapes(desc, layout, fontSize, bgFont, ctx, sourceText);
+        const { shapes, transform } = buildBackgroundShapes(
+            desc,
+            layout,
+            fontSize,
+            bgFont,
+            ctx,
+            sourceText,
+            textCurve,
+        );
         if (shapes.length === 0 && !transform) continue;
 
         if (shapes.length) {
@@ -628,6 +638,7 @@ function buildBackgroundShapes(
     fontForLayer: opentype.Font,
     ctx: BackgroundBuildContext,
     sourceText: string,
+    textCurve?: TextCurveOptions,
 ): ShapeBuildResult {
     switch (desc.type) {
         case BackgroundLayerType.Solid:
@@ -639,7 +650,7 @@ function buildBackgroundShapes(
         case BackgroundLayerType.GlyphPattern:
             return buildGlyphPatternBackground(desc, fontForLayer, ctx);
         case BackgroundLayerType.TextLike:
-            return buildTextLikeBackground(desc, layout, fontSize, fontForLayer, ctx, sourceText);
+            return buildTextLikeBackground(desc, layout, fontSize, fontForLayer, ctx, sourceText, textCurve);
         default:
             return { shapes: [] };
     }
@@ -881,6 +892,7 @@ function buildTextLikeBackground(
     font: opentype.Font,
     ctx: BackgroundBuildContext,
     originalText: string,
+    textCurve?: TextCurveOptions,
 ): ShapeBuildResult {
     const text = desc.text && desc.text.length ? desc.text : originalText;
     let layout = baseLayout;
@@ -890,23 +902,36 @@ function buildTextLikeBackground(
         layout = prepared.layout;
         fontSize = prepared.finalFontSize;
     }
-    const total = layout.length || 1;
+    const curveOptions = desc.params?.inheritTextCurve === false ? undefined : textCurve;
+    const curvedLayout = applyTextCurve(layout, curveOptions, fontSize, font.unitsPerEm);
+    const total = curvedLayout.length || 1;
     const groups: GroupShapeElement[] = [];
-    layout.forEach((glyphInfo, idx) => {
-        const pathShapes = glyphToShapes(glyphInfo.glyph, glyphInfo.char, idx, {
-            fontSize,
+    curvedLayout.forEach((glyphInfo, idx) => {
+        const letterIndex = glyphInfo.letterIndex ?? idx;
+        const targetScaleX = glyphInfo.curveScaleX ?? glyphInfo.curveScale ?? 1;
+        const targetScaleY = glyphInfo.curveScaleY ?? glyphInfo.curveScale ?? 1;
+        const letterScale = Math.max(0.01, (targetScaleX + targetScaleY) * 0.5);
+        const letterFontSize = fontSize * letterScale;
+        const pathShapes = glyphToShapes(glyphInfo.glyph, glyphInfo.char, letterIndex, {
+            fontSize: letterFontSize,
             duration: ctx.duration,
             pathMorphAnimation: pickType(desc.pathMorphAnimations, PathMorphAnimationType.None),
             pathMorphAnimations: desc.pathMorphAnimations,
-            seed: buildLetterSeed(idx, glyphInfo.char.codePointAt(0) ?? idx, ctx.seed),
+            seed: buildLetterSeed(
+                letterIndex,
+                glyphInfo.char.codePointAt(0) ?? letterIndex,
+                ctx.seed,
+            ),
         });
         const bbox = glyphInfo.glyph.getBoundingBox();
         const unitsPerEm = font.unitsPerEm || 1000;
-        const scale = fontSize / unitsPerEm;
-        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * scale;
-        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * scale);
+        const glyphScale = letterFontSize / unitsPerEm;
+        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * glyphScale;
+        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * glyphScale);
+        const anisotropicX = letterScale > 0 ? targetScaleX / letterScale : 1;
+        const anisotropicY = letterScale > 0 ? targetScaleY / letterScale : 1;
         const letterTransform = buildBackgroundLetterTransform(desc.letterAnimations, {
-            letterIndex: idx,
+            letterIndex,
             x: glyphInfo.x,
             y: glyphInfo.y,
             duration: ctx.duration,
@@ -914,6 +939,10 @@ function buildTextLikeBackground(
             anchorX,
             anchorY,
             lettersCount: total,
+            scaleFactor: letterScale,
+            curveScaleX: anisotropicX,
+            curveScaleY: anisotropicY,
+            curveRotation: glyphInfo.curveRotation,
         });
         const items: any[] = [...pathShapes];
         const colorPhaseStep = desc.params?.colorPhaseStep;
@@ -925,7 +954,7 @@ function buildTextLikeBackground(
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,
             letterPhase: phase,
-            letterIndex: idx,
+            letterIndex,
         });
         if (styles.fill) items.push(styles.fill);
         if (styles.stroke) items.push(styles.stroke);

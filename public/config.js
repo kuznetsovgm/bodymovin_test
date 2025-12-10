@@ -211,11 +211,28 @@
             paddingFactor: 'number',
             cornerRadius: 'number',
             colorPhaseStep: 'number',
+            inheritTextCurve: 'boolean',
             scale: 'number',
             rotationDeg: 'number',
             opacity: 'number',
             offsetX: 'number',
             offsetY: 'number',
+        },
+    };
+
+    const localBackgroundParamMeta = {
+        textLike: {
+            inheritTextCurve: {
+                label: 'Повторять кривизну текста',
+                hint: 'Использует настройки Text Curve для фонового текста',
+                default: true,
+            },
+        },
+    };
+
+    const localBackgroundParamDefaults = {
+        textLike: {
+            inheritTextCurve: true,
         },
     };
 
@@ -528,12 +545,13 @@
     }
 
     function getBackgroundParamMeta(type) {
-        const meta =
+        const remote =
             state.meta &&
             state.meta.defaults &&
             state.meta.defaults.backgroundParamMeta &&
             state.meta.defaults.backgroundParamMeta[type];
-        return meta || {};
+        const local = localBackgroundParamMeta[type] || {};
+        return { ...local, ...(remote || {}) };
     }
 
     function getBackgroundDefaults(key) {
@@ -548,10 +566,12 @@
 
     function getBackgroundParamDefaults(type) {
         const defaults = getBackgroundDefaults(type);
-        if (defaults && defaults.params) {
-            return deepCopy(defaults.params);
-        }
-        return null;
+        const remoteParams = defaults && defaults.params ? deepCopy(defaults.params) : null;
+        const localDefaults = localBackgroundParamDefaults[type]
+            ? deepCopy(localBackgroundParamDefaults[type])
+            : null;
+        if (!remoteParams && !localDefaults) return null;
+        return { ...(localDefaults || {}), ...(remoteParams || {}) };
     }
 
     function deepCopy(obj) {
@@ -1573,7 +1593,13 @@
             return {
                 type,
                 text: '',
-                params: { paddingFactor: 0, colorPhaseStep: 0, scale: 1, opacity: 1 },
+                params: {
+                    paddingFactor: 0,
+                    colorPhaseStep: 0,
+                    inheritTextCurve: true,
+                    scale: 1,
+                    opacity: 1,
+                },
                 colorAnimations: [
                     { type: 'none', params: { colors: [[0, 0, 0, 1]], times: [0], loop: false } },
                 ],
