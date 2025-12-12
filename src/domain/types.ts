@@ -147,6 +147,15 @@ export type TextLikeBackgroundParams = BackgroundScaleRotateOpacity & {
     colorPhaseStep?: number;
     /** Повторять ли изгиб основного текста (Text Curve) */
     inheritTextCurve?: boolean;
+    /** Пользовательские настройки кривой текста, если не копируем */
+    textCurveMode?: TextCurveMode;
+    textCurveRadius?: number;
+    textCurveSphereScaleFactor?: number;
+    textCurveSphereEdgeDrop?: number;
+    textCurveSphereHorizontalRange?: number;
+    textCurveSphereVerticalRange?: number;
+    textCurveSphereNarrowShift?: number;
+    textCurveRotateLetters?: boolean;
 };
 
 export type SolidBackgroundDescriptor = BackgroundBase & {
