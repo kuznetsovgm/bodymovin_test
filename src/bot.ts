@@ -169,47 +169,54 @@ async function uploadStickerToTelegram(
     return null;
 }
 
+type EnabledStickerConfig = Awaited<ReturnType<StickerConfigManager['getEnabledConfigs']>>[number];
+
+type PreloadedConfigData = {
+    enabledConfigs: EnabledStickerConfig[];
+    cachedFileIds?: (string | null)[];
+};
+
 async function generateAndCacheStickers(
     ctx: Context,
     text: string,
     offset: number,
     limit: number,
+    preloaded?: PreloadedConfigData,
 ): Promise<InlineQueryResult[]> {
     if (!text.trim()) {
         return [];
     }
     const normalizedText = text.trim();
 
-    // Load enabled sticker configs from Redis
-    const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
+    const enabledConfigs =
+        preloaded?.enabledConfigs ?? await stickerConfigManager.getEnabledConfigs();
 
-    if (enabledConfigs.length === 0) {
-        console.log('No enabled sticker configurations found in Redis');
+    if (!enabledConfigs.length) {
+        logger.warn('No enabled sticker configurations found in Redis');
         return [];
     }
 
-    // Calculate which stickers to generate for this batch
     const endIndex = Math.min(offset + limit, enabledConfigs.length);
+    if (offset >= endIndex) {
+        return [];
+    }
 
-    // Get all configs for this batch
-    const batchConfigs = enabledConfigs.slice(offset, endIndex).map(c => c.config);
+    const batchConfigs = enabledConfigs.slice(offset, endIndex).map((c) => c.config);
+    const cachedFileIds = preloaded?.cachedFileIds
+        ? preloaded.cachedFileIds.slice(offset, endIndex)
+        : await stickerCache.getBatch(normalizedText, batchConfigs);
 
-    // Fetch all cached file_ids in one batch request
-    const cachedFileIds = await stickerCache.getBatch(normalizedText, batchConfigs);
-
-    // Prepare tasks for worker pool
+    const totalItems = endIndex - offset;
+    const orderedResults: (InlineQueryResult | null)[] = new Array(totalItems).fill(null);
     const tasks: StickerGenerationTask[] = [];
-    const taskIndexMap: Map<string, number> = new Map();
 
     for (let i = offset; i < endIndex; i++) {
         const { config: variant, id: configId } = enabledConfigs[i];
         const batchIndex = i - offset;
         const fileId = cachedFileIds[batchIndex];
 
-        // Generate if not cached
         if (!fileId) {
             cacheMissesTotal.inc({ cache_type: 'sticker' });
-
             const taskId = crypto.randomBytes(8).toString('hex');
             const task: StickerGenerationTask = {
                 id: taskId,
@@ -220,39 +227,34 @@ async function generateAndCacheStickers(
             };
 
             tasks.push(task);
-            taskIndexMap.set(taskId, i);
-
             logger.info(
                 `[${i + 1}/${enabledConfigs.length}] Queuing task for "${normalizedText}" (config: ${configId})...`,
             );
         } else {
             cacheHitsTotal.inc({ cache_type: 'sticker' });
+            orderedResults[batchIndex] = {
+                type: 'sticker',
+                id: configId,
+                sticker_file_id: fileId,
+            } as InlineQueryResultCachedSticker;
             logger.debug(
                 `[${i + 1}/${enabledConfigs.length}] Using cached sticker for "${normalizedText}" (config: ${configId})`,
             );
         }
     }
 
-    // Submit tasks to worker pool and process results
-    const results: InlineQueryResult[] = [];
-    const resultPromises: Promise<void>[] = [];
-
-    for (const task of tasks) {
-        const promise = (async () => {
+    const resultPromises: Promise<void>[] = tasks.map((task) =>
+        (async () => {
             try {
                 const result = await workerPool.submitTask(task);
                 const index = result.index;
 
                 if (result.success && result.sticker) {
-                    // Convert sticker to buffer
                     const stickerBuffer = await stickerToBuffer(result.sticker);
-
-                    // Upload to Telegram
                     const uploadedFileId = await uploadStickerToTelegram(ctx, stickerBuffer);
                     const animType = (task.variant as any).transform?.type || 'static';
 
                     if (uploadedFileId) {
-                        // Cache to Redis
                         await stickerCache.set(normalizedText, task.variant, uploadedFileId);
 
                         stickerGenerationDuration.observe({ animation_type: animType }, result.duration);
@@ -260,14 +262,14 @@ async function generateAndCacheStickers(
                         logStickerGeneration(animType, normalizedText, true, result.duration);
                         logger.info(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
 
-                        // Add to results
-                        const variant = enabledConfigs[index].config;
-                        const configHash = stickerCache.generateConfigHash(variant);
-                        results.push({
-                            type: 'sticker',
-                            id: configHash,
-                            sticker_file_id: uploadedFileId,
-                        } as InlineQueryResultCachedSticker);
+                        const batchIndex = index - offset;
+                        if (batchIndex >= 0 && batchIndex < orderedResults.length) {
+                            orderedResults[batchIndex] = {
+                                type: 'sticker',
+                                id: task.configId,
+                                sticker_file_id: uploadedFileId,
+                            } as InlineQueryResultCachedSticker;
+                        }
                     } else {
                         stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
                         errorsTotal.inc({ error_type: 'upload_failed' });
@@ -292,32 +294,20 @@ async function generateAndCacheStickers(
                     error,
                 );
             }
-        })();
+        })(),
+    );
 
-        resultPromises.push(promise);
-    }
-
-    // Wait for all worker tasks to complete
     await Promise.all(resultPromises);
 
-    // Add cached results
-    for (let i = offset; i < endIndex; i++) {
-        const batchIndex = i - offset;
-        const fileId = cachedFileIds[batchIndex];
-
-        if (fileId) {
-            const variant = enabledConfigs[i].config;
-            const configHash = stickerCache.generateConfigHash(variant);
-
-            results.push({
-                type: 'sticker',
-                id: configHash,
-                sticker_file_id: fileId,
-            } as InlineQueryResultCachedSticker);
+    const sequentialResults: InlineQueryResult[] = [];
+    for (const result of orderedResults) {
+        if (!result) {
+            break;
         }
+        sequentialResults.push(result);
     }
 
-    return results;
+    return sequentialResults;
 }
 
 // Inline query handler with pagination
@@ -369,7 +359,6 @@ bot.on('inline_query', async (ctx) => {
     }
 
     const userId = ctx.from.id.toString();
-    const queryId = ctx.inlineQuery.id;
     const STICKERS_PER_PAGE_CACHED = 20; // Return 20 stickers per page when cached
     const STICKERS_PER_PAGE_GENERATE = 5; // Generate only 5 stickers per page
 
@@ -396,49 +385,61 @@ bot.on('inline_query', async (ctx) => {
 
     // Try to get cached results for all enabled variants in one batch request
     const enabledConfigs = await stickerConfigManager.getEnabledConfigs();
+    const totalEnabled = enabledConfigs.length;
+    if (offset >= totalEnabled) {
+        await ctx.answerInlineQuery([], { cache_time: 300, next_offset: '' });
+        inlineQueriesTotal.inc({ status: 'empty' });
+        const duration = (Date.now() - queryStartTime) / 1000;
+        logInlineQuery(query, ctx.from.id, true, duration);
+        return;
+    }
     const allConfigs = enabledConfigs.map(c => c.config);
     const allCachedFileIds = await stickerCache.getBatch(normalizedText, allConfigs);
 
-    const cachedResults: InlineQueryResult[] = [];
+    const buildCachedRangeResults = (rangeSize: number): InlineQueryResult[] | null => {
+        const remaining = Math.max(0, totalEnabled - offset);
+        const availableCount = Math.min(rangeSize, remaining);
+        if (availableCount <= 0) {
+            return [];
+        }
 
-    for (let i = 0; i < enabledConfigs.length; i++) {
-        const fileId = allCachedFileIds[i];
+        const results: InlineQueryResult[] = [];
+        for (let i = 0; i < availableCount; i++) {
+            const index = offset + i;
+            const fileId = allCachedFileIds[index];
 
-        if (fileId) {
-            // Use config hash as sticker ID (same as cache key)
-            const config = enabledConfigs[i].config;
-            const configHash = stickerCache.generateConfigHash(config);
+            if (!fileId) {
+                return null;
+            }
 
-            cachedResults.push({
+            const { id } = enabledConfigs[index];
+            results.push({
                 type: 'sticker',
-                id: configHash,
+                id,
                 sticker_file_id: fileId,
             } as InlineQueryResultCachedSticker);
         }
-    }
 
-    if (cachedResults.length > 0) {
+        return results;
+    };
+
+    const cachedRange =
+        buildCachedRangeResults(STICKERS_PER_PAGE_CACHED) ??
+        buildCachedRangeResults(STICKERS_PER_PAGE_GENERATE);
+
+    if (cachedRange && cachedRange.length > 0) {
+        const nextOffset =
+            offset + cachedRange.length < totalEnabled
+                ? (offset + cachedRange.length).toString()
+                : '';
         try {
-            // If we don't have enough cached results for this offset, fall through to generation
-            if (offset < cachedResults.length) {
-                // Return up to 20 cached stickers per page
-                const paginatedResults = cachedResults.slice(
-                    offset,
-                    offset + STICKERS_PER_PAGE_CACHED,
-                );
-                const returnedCount = paginatedResults.length;
-                const hasMoreCachedOrPending =
-                    offset + returnedCount < enabledCount;
-                const nextOffset = hasMoreCachedOrPending
-                    ? (offset + returnedCount).toString()
-                    : '';
-
-                await ctx.answerInlineQuery(paginatedResults, {
-                    // cache_time: 300,
-                    next_offset: nextOffset,
-                });
-                return;
-            }
+            await ctx.answerInlineQuery(cachedRange, {
+                next_offset: nextOffset,
+            });
+            inlineQueriesTotal.inc({ status: 'cached' });
+            const duration = (Date.now() - queryStartTime) / 1000;
+            logInlineQuery(query, ctx.from.id, true, duration);
+            return;
         } catch (error) {
             console.error('Error answering with cached results:', error);
         }
@@ -456,11 +457,13 @@ bot.on('inline_query', async (ctx) => {
                 query,
                 offset,
                 STICKERS_PER_PAGE_GENERATE,
+                { enabledConfigs, cachedFileIds: allCachedFileIds },
             );
 
+            const servedCount = results.length;
             const nextOffset =
-                offset + STICKERS_PER_PAGE_GENERATE < enabledCount
-                    ? (offset + STICKERS_PER_PAGE_GENERATE).toString()
+                offset + servedCount < totalEnabled
+                    ? (offset + servedCount).toString()
                     : '';
 
             await ctx.answerInlineQuery(results, {
