@@ -5342,6 +5342,35 @@
 
             scrollContainer.appendChild(item);
         });
+
+        renderEnabledOrderList();
+    }
+
+    function renderEnabledOrderList() {
+        const orderEl = $('enabledOrderList');
+        if (!orderEl) return;
+        orderEl.innerHTML = '';
+        const enabledVariants = getEnabledVariants();
+        if (!enabledVariants.length) {
+            orderEl.classList.add('empty');
+            return;
+        }
+        orderEl.classList.remove('empty');
+        enabledVariants.forEach((variant, idx) => {
+            const li = document.createElement('li');
+            li.dataset.variantId = variant.id;
+            const label =
+                (typeof variant.name === 'string' && variant.name.trim()) ||
+                (variant.meta && typeof variant.meta.name === 'string' && variant.meta.name.trim()) ||
+                variant.id;
+            li.textContent = `${idx + 1}. ${label}`;
+            if (label !== variant.id) {
+                const idSpan = document.createElement('span');
+                idSpan.textContent = variant.id;
+                li.appendChild(idSpan);
+            }
+            orderEl.appendChild(li);
+        });
     }
 
     async function saveCurrentVariant() {

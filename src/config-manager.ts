@@ -15,6 +15,8 @@ export const STICKER_CONFIG_SCORE_ZSET_KEY = 'sticker:config:score';
 
 const CONFIG_PREFIX = 'config:';
 const CONFIG_ENABLED_ZSET = 'config:enabled:ordered';
+const LEGACY_CONFIG_ENABLED_SET_KEY = 'config:enabled';
+const LEGACY_CONFIG_ENABLED_ORDER_KEY = 'config:enabled_order';
 const UPLOAD_CHAT_IDS_KEY = 'config:upload_chat_ids';
 const DEBOUNCE_DELAY_KEY = 'config:debounce_delay';
 const USER_RECENT_STICKERS_LIMIT_KEY = 'config:inline:user_recent_limit';
@@ -45,16 +47,121 @@ export class StickerConfigManager {
     private inlineHistoryEnabledCacheTime: number = 0;
     private inlineGlobalConfigScoringEnabledCache: boolean | null = null;
     private inlineGlobalConfigScoringEnabledCacheTime: number = 0;
+    private enabledOrderInitialized = false;
 
     constructor(redis: Redis) {
         this.redis = redis;
     }
 
+    private isReservedConfigKey(key: string): boolean {
+        return (
+            key === CONFIG_ENABLED_ZSET ||
+            key === LEGACY_CONFIG_ENABLED_SET_KEY ||
+            key === LEGACY_CONFIG_ENABLED_ORDER_KEY ||
+            key === UPLOAD_CHAT_IDS_KEY ||
+            key === DEBOUNCE_DELAY_KEY
+        );
+    }
+
+    private parseIdArray(raw: string | null): string[] {
+        if (!raw) return [];
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return [];
+            return parsed
+                .map((value) => (typeof value === 'string' ? value.trim() : ''))
+                .filter((value): value is string => Boolean(value));
+        } catch (error) {
+            console.error('Error parsing legacy enabled order JSON:', error);
+            return [];
+        }
+    }
+
+    private async ensureEnabledOrderInitialized(): Promise<void> {
+        if (this.enabledOrderInitialized) return;
+        try {
+            const zsetCount = await this.redis.zcard(CONFIG_ENABLED_ZSET);
+            if (zsetCount === 0) {
+                await this.migrateLegacyEnabledOrder();
+            }
+        } catch (error) {
+            console.error('Error while checking enabled order state:', error);
+        }
+        this.enabledOrderInitialized = true;
+    }
+
+    private async migrateLegacyEnabledOrder(): Promise<void> {
+        try {
+            const [rawOrder, enabledMembers] = await Promise.all([
+                this.redis.get(LEGACY_CONFIG_ENABLED_ORDER_KEY),
+                this.redis.smembers(LEGACY_CONFIG_ENABLED_SET_KEY),
+            ]);
+            const legacyOrder = this.parseIdArray(rawOrder);
+            const legacyEnabled = new Set(
+                (enabledMembers || [])
+                    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+                    .filter((value): value is string => Boolean(value)),
+            );
+
+            const configKeys = (await this.redis.keys(`${CONFIG_PREFIX}*`)).filter(
+                (key) => !this.isReservedConfigKey(key),
+            );
+            const availableIds = configKeys
+                .map((key) => key.replace(CONFIG_PREFIX, ''))
+                .filter((id): id is string => Boolean(id));
+            if (!availableIds.length) return;
+
+            const availableSet = new Set(availableIds);
+            const ordered: string[] = [];
+            const seen = new Set<string>();
+
+            legacyOrder.forEach((id) => {
+                if (!availableSet.has(id) || seen.has(id)) return;
+                if (legacyEnabled.size && !legacyEnabled.has(id)) return;
+                ordered.push(id);
+                seen.add(id);
+                legacyEnabled.delete(id);
+            });
+
+            if (!ordered.length && !legacyEnabled.size && legacyOrder.length) {
+                legacyOrder.forEach((id) => {
+                    if (availableSet.has(id) && !seen.has(id)) {
+                        ordered.push(id);
+                        seen.add(id);
+                    }
+                });
+            }
+
+            if (legacyEnabled.size) {
+                legacyEnabled.forEach((id) => {
+                    if (availableSet.has(id) && !seen.has(id)) {
+                        ordered.push(id);
+                        seen.add(id);
+                    }
+                });
+            }
+
+            if (!ordered.length) return;
+
+            const pipeline = this.redis.multi();
+            ordered.forEach((id, idx) => {
+                pipeline.zadd(CONFIG_ENABLED_ZSET, idx + 1, id);
+            });
+            pipeline.del(LEGACY_CONFIG_ENABLED_SET_KEY);
+            pipeline.del(LEGACY_CONFIG_ENABLED_ORDER_KEY);
+            await pipeline.exec();
+        } catch (error) {
+            console.error('Error migrating legacy enabled order to sorted set:', error);
+        }
+    }
+
     private async getOrderedEnabledIds(): Promise<string[]> {
+        await this.ensureEnabledOrderInitialized();
         return this.redis.zrange(CONFIG_ENABLED_ZSET, 0, -1);
     }
 
     private async getNextEnabledOrderScore(): Promise<number> {
+        await this.ensureEnabledOrderInitialized();
         const last = await this.redis.zrevrange(CONFIG_ENABLED_ZSET, 0, 0, 'WITHSCORES');
         if (Array.isArray(last) && last.length >= 2) {
             const score = Number(last[1]);
@@ -66,6 +173,7 @@ export class StickerConfigManager {
     }
 
     private async addToEnabledOrder(configId: string, score?: number): Promise<void> {
+        await this.ensureEnabledOrderInitialized();
         if (score === undefined) {
             const existing = await this.redis.zscore(CONFIG_ENABLED_ZSET, configId);
             if (existing !== null) {
@@ -178,6 +286,7 @@ export class StickerConfigManager {
         meta?: StickerConfigMeta,
     ): Promise<string> {
         try {
+            await this.ensureEnabledOrderInitialized();
             const sanitizedConfig = this.sanitizeConfig(config);
             const configId = this.generateConfigId(sanitizedConfig);
             const key = `${CONFIG_PREFIX}${configId}`;
@@ -292,10 +401,7 @@ export class StickerConfigManager {
         try {
             const pattern = `${CONFIG_PREFIX}*`;
             const keys = (await this.redis.keys(pattern)).filter(
-                (key) =>
-                    key !== CONFIG_ENABLED_ZSET &&
-                    key !== UPLOAD_CHAT_IDS_KEY &&
-                    key !== DEBOUNCE_DELAY_KEY,
+                (key) => !this.isReservedConfigKey(key),
             );
             const orderedEnabledIds = await this.getOrderedEnabledIds();
             const enabledIdSet = new Set(orderedEnabledIds);
@@ -372,6 +478,7 @@ export class StickerConfigManager {
      */
     async disableConfig(configId: string): Promise<boolean> {
         try {
+            await this.ensureEnabledOrderInitialized();
             await this.redis.zrem(CONFIG_ENABLED_ZSET, configId);
             return true;
         } catch (error) {
@@ -385,6 +492,7 @@ export class StickerConfigManager {
      */
     async isEnabled(configId: string): Promise<boolean> {
         try {
+            await this.ensureEnabledOrderInitialized();
             const score = await this.redis.zscore(CONFIG_ENABLED_ZSET, configId);
             return score !== null;
         } catch (error) {
@@ -400,6 +508,7 @@ export class StickerConfigManager {
         try {
             const key = `${CONFIG_PREFIX}${configId}`;
             await this.redis.del(key);
+            await this.ensureEnabledOrderInitialized();
             await this.redis.zrem(CONFIG_ENABLED_ZSET, configId);
             return true;
         } catch (error) {
@@ -414,6 +523,7 @@ export class StickerConfigManager {
      */
     async setEnabledConfigOrder(order: string[]): Promise<void> {
         try {
+            await this.ensureEnabledOrderInitialized();
             const currentOrder = await this.getOrderedEnabledIds();
             if (!currentOrder.length) {
                 return;
@@ -461,6 +571,7 @@ export class StickerConfigManager {
         enabled: boolean,
     ): Promise<void> {
         try {
+            await this.ensureEnabledOrderInitialized();
             const rawScore = await this.redis.zscore(CONFIG_ENABLED_ZSET, oldId);
             await this.redis.zrem(CONFIG_ENABLED_ZSET, oldId);
 
@@ -488,6 +599,7 @@ export class StickerConfigManager {
      */
     async getEnabledCount(): Promise<number> {
         try {
+            await this.ensureEnabledOrderInitialized();
             return await this.redis.zcard(CONFIG_ENABLED_ZSET);
         } catch (error) {
             console.error('Error getting enabled count:', error);
