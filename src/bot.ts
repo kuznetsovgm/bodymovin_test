@@ -579,7 +579,7 @@ bot.command('start', async (ctx) => {
         '4. Choose from different animated styles!\n\n' +
         'Try it now: `@' + username + ' Hello`';
 
-    const buttonText = isRussian ? 'Попробуй сейчас!' : 'Try it now!';
+    const buttonText = isRussian ? 'Выбрать чат' : 'Select chat';
     const buttonQuery = isRussian ? 'Привет!' : 'Hello!';
 
     ctx.reply(messageText, {
