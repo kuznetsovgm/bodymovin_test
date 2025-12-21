@@ -1,6 +1,12 @@
 import { GenerateStickerOptions } from '../domain/types';
 import { Sticker } from '../interfaces/sticker';
 
+export interface TransferableStickerBuffer {
+    buffer: ArrayBufferLike;
+    byteOffset: number;
+    byteLength: number;
+}
+
 /**
  * Task to be processed by a worker
  */
@@ -19,6 +25,7 @@ export interface StickerGenerationResult {
     taskId: string;
     success: boolean;
     sticker?: Sticker;
+    stickerBuffer?: TransferableStickerBuffer;
     error?: string;
     duration: number;
     index: number;

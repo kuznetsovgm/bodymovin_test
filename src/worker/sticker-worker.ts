@@ -1,5 +1,5 @@
-import { parentPort } from 'worker_threads';
-import { generateSticker } from '../pipeline/generateSticker';
+import { parentPort, type TransferListItem } from 'worker_threads';
+import { generateSticker, stickerToBuffer } from '../pipeline/generateSticker';
 import {
     WorkerMessageType,
     WorkerTaskMessage,
@@ -7,6 +7,7 @@ import {
     WorkerResultMessage,
     WorkerErrorMessage,
     WorkerReadyMessage,
+    TransferableStickerBuffer
 } from './types';
 import { logger } from '../logger';
 
@@ -24,6 +25,37 @@ const readyMessage: WorkerReadyMessage = {
     type: WorkerMessageType.READY,
 };
 parentPort.postMessage(readyMessage);
+
+function prepareTransferableSticker(buffer: Buffer): {
+    payload: TransferableStickerBuffer;
+    transferList: TransferListItem[];
+} {
+    const needsCopy = buffer.byteOffset !== 0 || buffer.buffer.byteLength !== buffer.byteLength;
+
+    if (!needsCopy) {
+        const transferableBuffer = buffer.buffer as ArrayBuffer;
+        return {
+            payload: {
+                buffer: transferableBuffer,
+                byteOffset: buffer.byteOffset,
+                byteLength: buffer.byteLength,
+            },
+            transferList: [transferableBuffer],
+        };
+    }
+
+    const transferBuffer = new ArrayBuffer(buffer.byteLength);
+    new Uint8Array(transferBuffer).set(buffer);
+
+    return {
+        payload: {
+            buffer: transferBuffer,
+            byteOffset: 0,
+            byteLength: buffer.byteLength,
+        },
+        transferList: [transferBuffer],
+    };
+}
 
 // Listen for tasks from main thread
 parentPort.on('message', async (message: WorkerTaskMessage) => {
@@ -44,13 +76,15 @@ parentPort.on('message', async (message: WorkerTaskMessage) => {
             duration: 180,
             ...task.variant,
         });
+        const gzStickerBuffer = await stickerToBuffer(sticker);
+        const { payload: stickerBuffer, transferList } = prepareTransferableSticker(gzStickerBuffer);
 
         const duration = (Date.now() - startTime) / 1000;
 
         const result: StickerGenerationResult = {
             taskId: task.id,
             success: true,
-            sticker,
+            stickerBuffer,
             duration,
             index: task.index,
         };
@@ -60,7 +94,7 @@ parentPort.on('message', async (message: WorkerTaskMessage) => {
             result,
         };
 
-        parentPort!.postMessage(resultMessage);
+        parentPort!.postMessage(resultMessage, transferList);
     } catch (error) {
         const duration = (Date.now() - startTime) / 1000;
         const errorMessage = error instanceof Error ? error.message : String(error);

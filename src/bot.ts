@@ -26,7 +26,7 @@ import {
     healthStatus,
 } from './metrics';
 import { StickerWorkerPool } from './worker/worker-pool';
-import { StickerGenerationTask } from './worker/types';
+import { StickerGenerationTask, StickerGenerationResult } from './worker/types';
 import { UserService } from './db/user-service';
 import { createSaveUserMiddleware } from './db/user-middleware';
 import { getDataSource } from './db/data-source';
@@ -50,6 +50,22 @@ const USER_RECENT_KEY_PREFIX = 'user';
 
 // Initialize worker pool
 const workerPool = new StickerWorkerPool(WORKER_POOL_SIZE, WORKER_QUEUE_SIZE);
+
+async function resolveResultStickerBuffer(result: StickerGenerationResult): Promise<Buffer | null> {
+    if (result.stickerBuffer) {
+        return Buffer.from(
+            result.stickerBuffer.buffer,
+            result.stickerBuffer.byteOffset,
+            result.stickerBuffer.byteLength,
+        );
+    }
+
+    if (result.sticker) {
+        return stickerToBuffer(result.sticker);
+    }
+
+    return null;
+}
 
 // HTTP server for metrics and health checks
 const METRICS_PORT = parseInt(process.env.METRICS_PORT || '3099', 10);
@@ -249,34 +265,42 @@ async function generateAndCacheStickers(
                 const result = await workerPool.submitTask(task);
                 const index = result.index;
 
-                if (result.success && result.sticker) {
-                    const stickerBuffer = await stickerToBuffer(result.sticker);
-                    const uploadedFileId = await uploadStickerToTelegram(ctx, stickerBuffer);
-                    const animType = (task.variant as any).transform?.type || 'static';
+                const animType = (task.variant as any).transform?.type || 'static';
 
-                    if (uploadedFileId) {
-                        await stickerCache.set(normalizedText, task.variant, uploadedFileId);
+                if (result.success) {
+                    const stickerBuffer = await resolveResultStickerBuffer(result);
 
-                        stickerGenerationDuration.observe({ animation_type: animType }, result.duration);
-                        stickersGeneratedTotal.inc({ animation_type: animType, status: 'success' });
-                        logStickerGeneration(animType, normalizedText, true, result.duration);
-                        logger.info(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
+                    if (stickerBuffer) {
+                        const uploadedFileId = await uploadStickerToTelegram(ctx, stickerBuffer);
 
-                        const batchIndex = index - offset;
-                        if (batchIndex >= 0 && batchIndex < orderedResults.length) {
-                            orderedResults[batchIndex] = {
-                                type: 'sticker',
-                                id: task.configId,
-                                sticker_file_id: uploadedFileId,
-                            } as InlineQueryResultCachedSticker;
+                        if (uploadedFileId) {
+                            await stickerCache.set(normalizedText, task.variant, uploadedFileId);
+
+                            stickerGenerationDuration.observe({ animation_type: animType }, result.duration);
+                            stickersGeneratedTotal.inc({ animation_type: animType, status: 'success' });
+                            logStickerGeneration(animType, normalizedText, true, result.duration);
+                            logger.info(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
+
+                            const batchIndex = index - offset;
+                            if (batchIndex >= 0 && batchIndex < orderedResults.length) {
+                                orderedResults[batchIndex] = {
+                                    type: 'sticker',
+                                    id: task.configId,
+                                    sticker_file_id: uploadedFileId,
+                                } as InlineQueryResultCachedSticker;
+                            }
+                        } else {
+                            stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
+                            errorsTotal.inc({ error_type: 'upload_failed' });
+                            logger.error(`[${index + 1}/${enabledConfigs.length}] ✗ Upload failed`);
                         }
                     } else {
                         stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
-                        errorsTotal.inc({ error_type: 'upload_failed' });
-                        logger.error(`[${index + 1}/${enabledConfigs.length}] ✗ Upload failed`);
+                        errorsTotal.inc({ error_type: 'generation_error' });
+                        logStickerGeneration(animType, normalizedText, false, result.duration, 'Empty sticker buffer');
+                        logger.error(`[${index + 1}/${enabledConfigs.length}] ✗ Failed: empty sticker buffer`);
                     }
                 } else {
-                    const animType = (task.variant as any).transform?.type || 'static';
                     stickersGeneratedTotal.inc({ animation_type: animType, status: 'error' });
                     errorsTotal.inc({ error_type: 'generation_error' });
                     logStickerGeneration(animType, normalizedText, false, result.duration, result.error);
