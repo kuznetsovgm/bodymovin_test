@@ -22,6 +22,7 @@ import {
     pathMorphAnimationConfig,
     fontAnimationConfig,
 } from './config/animation-config';
+import { Script } from './shared/scripts';
 import { DEFAULT_FRAME_RATE, DEFAULT_DURATION, DEFAULT_FONT_FILE } from './domain/defaults';
 import { loadFont } from './layout/fontLoader';
 import { fontHasCyrillic, fontSupportsText } from './layout/fontSupport';
@@ -530,6 +531,7 @@ async function handleMeta(res: http.ServerResponse) {
             frameRate: DEFAULT_FRAME_RATE,
             duration: DEFAULT_DURATION,
             fontFile: DEFAULT_FONT_FILE,
+            scripts: Object.keys(fontAnimationConfig.globalFallbacks || {}) as Script[],
             transformAnimationConfig,
             colorAnimationConfig,
             letterAnimationConfig,

@@ -327,6 +327,8 @@ export type FontAnimationConfig = {
     maxTextHeightFactor: number;
     /** Директория, где лежат шрифты */
     fontDirectory: string;
+    /** Глобальные фоллбеки шрифтов по скриптам (алфавитам) */
+    globalFallbacks: Partial<Record<import('../shared/scripts').Script, string>>;
 };
 
 export const fontAnimationConfig: FontAnimationConfig = {
@@ -335,4 +337,14 @@ export const fontAnimationConfig: FontAnimationConfig = {
     maxTextWidthFactor: 0.85,
     maxTextHeightFactor: 0.85,
     fontDirectory: './fonts',
+    globalFallbacks: {
+        latin: 'GoogleSans-Regular.ttf',
+        cyrillic: 'GoogleSans-Regular.ttf',
+        arabic: 'NotoSansArabic-Regular.ttf',
+        han: 'WDXLLubrifontSC-Regular.ttf',
+        georgian: 'GoogleSans-Regular.ttf',
+        hebrew: 'GoogleSans-Regular.ttf',
+        devanagari: 'GoogleSans-Regular.ttf',
+        emoji: 'NotoEmoji-Regular.ttf',
+    },
 };

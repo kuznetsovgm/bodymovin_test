@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "@lottiefiles/lottie-player": "^2.0.12",
+    "bidi-js": "^1.0.3",
     "dotenv": "^16.3.1",
     "ioredis": "^5.8.2",
     "lottie-web": "^5.13.0",

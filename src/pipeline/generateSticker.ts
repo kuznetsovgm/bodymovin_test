@@ -25,11 +25,12 @@ import {
 } from '../domain/types';
 import { writeJsonGz, jsonToGzBuffer } from '../shared/fs';
 import { Track } from '../shared/keyframes';
-import { wrapAndScaleText } from '../layout/wrap';
+import { wrapAndScaleTextMulti, wrapAndScaleText } from '../layout/wrap';
 import { loadFont } from '../layout/fontLoader';
-import { layoutText } from '../layout/layoutText';
+import { layoutText, layoutTextMulti } from '../layout/layoutText';
 import { glyphToShapes } from '../shapes/glyphToShapes';
-import { ensureFontSupportsText } from '../layout/fontSupport';
+import { buildTextFontPlan } from '../layout/fontSupport';
+import type { TextFontPlan } from '../layout/fontSupport';
 import { applyLetterAnimations } from '../animations/letter';
 import { buildLetterStyles } from '../style/apply';
 import { applyTransformsWithCompose, applyColorsWithCompose } from '../animations/composers';
@@ -64,8 +65,10 @@ import {
 import { convertOpentypePathToBezier } from '../shapes/bezier';
 import { buildLetterSeed } from '../shared/noise';
 import { minifySticker } from '../shared/lottieMinifier';
+import type { Script, TextDirection } from '../shared/scripts';
+import { detectTextDirection } from '../shared/scripts';
 
-type LayoutGlyphWithCurve = ReturnType<typeof layoutText>[number] & {
+type LayoutGlyphWithCurve = ReturnType<typeof layoutTextMulti>[number] & {
     curveScale?: number;
     curveScaleX?: number;
     curveScaleY?: number;
@@ -96,31 +99,42 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         seed = DEFAULT_SEED,
         textTransform,
         textCurve,
+        scriptFallbacks,
     } = opts;
     const resolvedFontSize = resolveFontSize(text, fontSize, width, height);
     const fontPath = path.resolve(fontAnimationConfig.fontDirectory, fontFile);
-    const fontObj = await loadFont(fontPath);
-    // Проверяем, что шрифт поддерживает все необходимые символы текста
-    ensureFontSupportsText(fontObj, text);
+
+    const fallbacksMerged: Partial<Record<Script, string>> = {
+        ...(fontAnimationConfig.globalFallbacks || {}),
+        ...(scriptFallbacks || {}),
+    };
+
+    const fontPlan = await buildTextFontPlan(fontPath, text, fallbacksMerged);
+    const resolveFont = (indexInText: number, ch: string) =>
+        fontPlan.byIndex.get(indexInText)?.font ?? fontPlan.primaryFont;
+    const direction: TextDirection = detectTextDirection(text);
+
     const { finalFontSize, layout } = prepareLayout(
         text,
-        fontObj,
+        fontPlan,
         resolvedFontSize,
         width,
         height,
+        resolveFont,
+        direction,
     );
     const curvedLayout = applyTextCurve(
         layout,
         textCurve,
         finalFontSize,
-        fontObj.unitsPerEm,
+        fontPlan.primaryFont.unitsPerEm,
     );
 
     const backgroundShapeLayers = await buildBackgroundLayers(
         layout,
         finalFontSize,
         backgroundLayers,
-        fontObj,
+        fontPlan.primaryFont,
         {
             width,
             height,
@@ -135,7 +149,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         layout,
         finalFontSize,
         knockoutBackground,
-        fontObj,
+        fontPlan.primaryFont,
         {
             width,
             height,
@@ -160,7 +174,6 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
 
     const lettersGroup = buildLettersGroup(
         curvedLayout,
-        fontObj,
         finalFontSize,
         colorAnimations,
         strokeAnimations,
@@ -218,7 +231,6 @@ function buildBaseLayer(width: number, height: number, duration: number, name: s
 
 function buildLettersGroup(
     layout: LayoutGlyphWithCurve[],
-    font: opentype.Font,
     fontSize: number,
     colorAnimations: ColorAnimationDescriptor[] | undefined,
     strokeAnimations: ColorAnimationDescriptor[] | undefined,
@@ -256,13 +268,13 @@ function buildLettersGroup(
 
     // Layer-level style (applied once per group)
     for (const glyphInfo of layout) {
-        const { char: ch, glyph, x, y, letterIndex, curveScale, curveScaleX, curveScaleY, curveRotation } = glyphInfo;
+        const { char: ch, glyph, font: glyphFont, x, y, letterIndex, curveScale, curveScaleX, curveScaleY, curveRotation } = glyphInfo;
         const targetScaleX = curveScaleX ?? curveScale ?? 1;
         const targetScaleY = curveScaleY ?? curveScale ?? 1;
         const letterScale = Math.max(0.01, (targetScaleX + targetScaleY) * 0.5);
         const letterFontSize = fontSize * letterScale;
         const bbox = glyph.getBoundingBox();
-        const unitsPerEm = font.unitsPerEm || 1000;
+        const unitsPerEm = glyphFont.unitsPerEm || 1000;
         const glyphScale = letterFontSize / unitsPerEm;
         const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * glyphScale;
         const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * glyphScale);
@@ -351,6 +363,27 @@ function pickType<T>(descs: AnimationDescriptor<T>[] | undefined, fallback: T): 
 
 function prepareLayout(
     text: string,
+    fontPlan: TextFontPlan,
+    fontSize: number,
+    width: number,
+    height: number,
+    resolveFont: (indexInText: number, ch: string) => opentype.Font,
+    direction: TextDirection,
+) {
+    const { lines, lineItems, finalFontSize, direction: wrapDirection } = wrapAndScaleTextMulti(
+        text,
+        fontSize,
+        width * fontAnimationConfig.maxTextWidthFactor,
+        height * fontAnimationConfig.maxTextHeightFactor,
+        resolveFont,
+    );
+    const resolvedDirection = wrapDirection || direction;
+    const layout = layoutTextMulti(lineItems, finalFontSize, resolveFont, resolvedDirection);
+    return { finalFontSize, layout };
+}
+
+function prepareLayoutSingle(
+    text: string,
     font: opentype.Font,
     fontSize: number,
     width: number,
@@ -363,12 +396,13 @@ function prepareLayout(
         width * fontAnimationConfig.maxTextWidthFactor,
         height * fontAnimationConfig.maxTextHeightFactor,
     );
-    const layout = layoutText(lines, font, finalFontSize);
+    const direction: TextDirection = detectTextDirection(text);
+    const layout = layoutText(lines, font, finalFontSize, direction);
     return { finalFontSize, layout };
 }
 
 function applyTextCurve(
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     textCurve?: TextCurveOptions,
     finalFontSize?: number,
     fontUnitsPerEm?: number,
@@ -461,7 +495,7 @@ function applyTextCurve(
 }
 
 function computeLayoutCenterOffsets(
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     finalFontSize?: number,
     fontUnitsPerEm?: number,
 ) {
@@ -562,13 +596,14 @@ type BackgroundBuildContext = {
 };
 
 async function buildBackgroundLayers(
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     fontSize: number,
     descs: BackgroundLayerDescriptor[] | undefined,
     font: opentype.Font,
     ctx: BackgroundBuildContext,
     sourceText: string,
     textCurve?: TextCurveOptions,
+    fallbacks?: Partial<Record<Script, string>>,
 ): Promise<ShapeLayer[]> {
     if (!descs || !descs.length) return [];
 
@@ -601,7 +636,7 @@ async function buildBackgroundLayers(
 
         const fontFileForLayer = extractBackgroundFontFile(desc);
         const bgFont = await resolveBackgroundFont(fontFileForLayer, font, fontCache);
-        const { shapes, transform } = buildBackgroundShapes(
+        const { shapes, transform } = await buildBackgroundShapes(
             desc,
             layout,
             fontSize,
@@ -609,6 +644,8 @@ async function buildBackgroundLayers(
             ctx,
             sourceText,
             textCurve,
+            fallbacks,
+            fontFileForLayer,
         );
         if (shapes.length === 0 && !transform) continue;
 
@@ -631,15 +668,17 @@ type ShapeBuildResult = {
     transform?: TransformShape | null;
 };
 
-function buildBackgroundShapes(
+async function buildBackgroundShapes(
     desc: BackgroundLayerDescriptor,
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     fontSize: number,
     fontForLayer: opentype.Font,
     ctx: BackgroundBuildContext,
     sourceText: string,
-    textCurve?: TextCurveOptions,
-): ShapeBuildResult {
+    textCurve: TextCurveOptions | undefined,
+    fallbacks: Partial<Record<Script, string>> | undefined,
+    fontFileForLayer?: string,
+): Promise<ShapeBuildResult> {
     switch (desc.type) {
         case BackgroundLayerType.Solid:
             return buildSolidBackground(desc, ctx);
@@ -650,7 +689,17 @@ function buildBackgroundShapes(
         case BackgroundLayerType.GlyphPattern:
             return buildGlyphPatternBackground(desc, fontForLayer, ctx);
         case BackgroundLayerType.TextLike:
-            return buildTextLikeBackground(desc, layout, fontSize, fontForLayer, ctx, sourceText, textCurve);
+            return await buildTextLikeBackground(
+                desc,
+                layout,
+                fontSize,
+                fontForLayer,
+                ctx,
+                sourceText,
+                textCurve,
+                fallbacks,
+                fontFileForLayer,
+            );
         default:
             return { shapes: [] };
     }
@@ -885,20 +934,39 @@ function buildGlyphPatternBackground(
     return { shapes: groups, transform };
 }
 
-function buildTextLikeBackground(
+async function buildTextLikeBackground(
     desc: TextLikeBackgroundDescriptor,
-    baseLayout: ReturnType<typeof layoutText>,
+    baseLayout: LayoutGlyphWithCurve[],
     baseFontSize: number,
     font: opentype.Font,
     ctx: BackgroundBuildContext,
     originalText: string,
-    textCurve?: TextCurveOptions,
-): ShapeBuildResult {
+    textCurve: TextCurveOptions | undefined,
+    fallbacks: Partial<Record<Script, string>> | undefined,
+    fontFileForLayer?: string,
+): Promise<ShapeBuildResult> {
     const text = desc.text && desc.text.length ? desc.text : originalText;
     let layout = baseLayout;
     let fontSize = baseFontSize;
     if (text !== originalText || desc.fontFile) {
-        const prepared = prepareLayout(text, font, baseFontSize, ctx.width, ctx.height);
+        const primaryFile = fontFileForLayer || desc.fontFile || DEFAULT_FONT_FILE;
+        const primaryPath = path.resolve(fontAnimationConfig.fontDirectory, primaryFile);
+        const bgPlan = await buildTextFontPlan(primaryPath, text, {
+            ...(fontAnimationConfig.globalFallbacks || {}),
+            ...(fallbacks || {}),
+        });
+        const resolveFont = (indexInText: number, ch: string) =>
+            bgPlan.byIndex.get(indexInText)?.font ?? bgPlan.primaryFont;
+        const direction: TextDirection = detectTextDirection(text);
+        const prepared = prepareLayout(
+            text,
+            bgPlan,
+            baseFontSize,
+            ctx.width,
+            ctx.height,
+            resolveFont,
+            direction,
+        );
         layout = prepared.layout;
         fontSize = prepared.finalFontSize;
     }
@@ -906,7 +974,7 @@ function buildTextLikeBackground(
     const curvedLayout = applyTextCurve(layout, curveOptions, fontSize, font.unitsPerEm);
     const total = curvedLayout.length || 1;
     const groups: GroupShapeElement[] = [];
-    curvedLayout.forEach((glyphInfo, idx) => {
+    curvedLayout.forEach((glyphInfo: LayoutGlyphWithCurve, idx: number) => {
         const letterIndex = glyphInfo.letterIndex ?? idx;
         const targetScaleX = glyphInfo.curveScaleX ?? glyphInfo.curveScale ?? 1;
         const targetScaleY = glyphInfo.curveScaleY ?? glyphInfo.curveScale ?? 1;
@@ -985,7 +1053,7 @@ function buildTextLikeBackground(
 // ---------------- Knockout background (дырка) ----------------
 
 function buildKnockoutBackgroundLayer(
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     fontSize: number,
     opts: KnockoutBackgroundOptions | undefined,
     font: opentype.Font,
@@ -1110,7 +1178,7 @@ function buildKnockoutBackgroundLayer(
 }
 
 function computeLayoutBounds(
-    layout: ReturnType<typeof layoutText>,
+    layout: LayoutGlyphWithCurve[],
     fontSize: number,
     font: opentype.Font,
 ) {

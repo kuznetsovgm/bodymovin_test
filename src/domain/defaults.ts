@@ -36,6 +36,7 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         fontSize,
         fontFile = DEFAULT_FONT_FILE,
         seed = DEFAULT_SEED,
+        scriptFallbacks,
     } = opts;
 
     return {
@@ -56,5 +57,6 @@ export function applyDefaults(opts: Partial<GenerateStickerOptions>): GenerateSt
         fontSize,
         fontFile,
         seed,
+        scriptFallbacks,
     };
 }

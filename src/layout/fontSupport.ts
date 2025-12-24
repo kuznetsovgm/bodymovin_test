@@ -1,4 +1,8 @@
+import path from 'path';
 import opentype from 'opentype.js';
+import { loadFont } from './fontLoader';
+import { fontAnimationConfig } from '../config/animation-config';
+import { detectScript, isEmojiCodePoint, Script } from '../shared/scripts';
 
 type FontSupportEntry = {
     glyphSupported: Map<number, boolean>;
@@ -28,6 +32,17 @@ function isWhitespaceOrControl(codePoint: number): boolean {
         codePoint === 0x0d || // cr
         codePoint === 0x0b || // vt
         codePoint === 0x0c // ff
+    );
+}
+
+function isIgnorableEmojiModifier(cp: number): boolean {
+    // ZWJ, variation selectors, skin tone modifiers и базовые модификаторы считаем служебными
+    return (
+        cp === 0x200d || // zero width joiner
+        cp === 0xfe0e ||
+        cp === 0xfe0f || // variation selectors
+        (cp >= 0x1f3fb && cp <= 0x1f3ff) || // skin tone
+        (cp >= 0x1f9b0 && cp <= 0x1f9b3) // hair modifiers
     );
 }
 
@@ -124,4 +139,130 @@ export function ensureFontSupportsText(font: opentype.Font, text: string): void 
     if (!fontSupportsText(font, trimmed)) {
         throw new Error('Selected font does not contain all glyphs required for this text');
     }
+}
+
+export type TextFontPlan = {
+    text: string;
+    perChar: {
+        char: string;
+        codePoint: number;
+        script: Script;
+        font: opentype.Font;
+        index: number;
+    }[];
+    byIndex: Map<number, { char: string; codePoint: number; script: Script; font: opentype.Font; index: number }>;
+    fonts: opentype.Font[];
+    primaryFont: opentype.Font;
+};
+
+const fallbackFontCache = new Map<string, Promise<opentype.Font>>();
+
+async function loadFallbackFont(fontFile: string, fallback: opentype.Font): Promise<opentype.Font> {
+    if (!fontFile) return fallback;
+    const cached = fallbackFontCache.get(fontFile);
+    if (cached) return cached;
+
+    const safe = fontFile.replace(/(\.\.(\/|\\))/g, '').replace(/^(\.\/|\/)+/, '');
+    const fullPath = path.resolve(fontAnimationConfig.fontDirectory, safe);
+    const promise = loadFont(fullPath).catch(() => fallback);
+    fallbackFontCache.set(fontFile, promise);
+    return promise;
+}
+
+export async function buildTextFontPlan(
+    primaryFontPath: string,
+    text: string,
+    fallbacks: Partial<Record<Script, string>>,
+): Promise<TextFontPlan> {
+    const primaryFont = await loadFont(primaryFontPath);
+    const primaryEntry = getSupportEntry(primaryFont);
+    const perChar: TextFontPlan['perChar'] = [];
+    const byIndex = new Map<number, TextFontPlan['perChar'][number]>();
+    const fonts = new Set<opentype.Font>([primaryFont]);
+    const missingScripts = new Set<Script>();
+
+    for (let i = 0; i < text.length;) {
+        const cp = text.codePointAt(i);
+        if (cp === undefined) break;
+        const char = String.fromCodePoint(cp);
+        const charLength = char.length;
+        const index = i;
+        i += charLength;
+        if (cp == null || isWhitespaceOrControl(cp) || isIgnorableEmojiModifier(cp)) {
+            const entry = { char, codePoint: cp ?? 0, script: 'other' as Script, font: primaryFont, index };
+            perChar.push(entry);
+            byIndex.set(index, entry);
+            continue;
+        }
+
+        const script = detectScript(cp);
+
+        // Эмодзи часто представлены суррогатами, поэтому не заставляем основной шрифт их поддерживать
+        if (script === 'emoji' || isEmojiCodePoint(cp)) {
+            const fbFile = fallbacks.emoji;
+            if (!fbFile) {
+                // Нет явного фоллбека — используем основной шрифт и не блокируем генерацию
+                const entry = { char, codePoint: cp, script, font: primaryFont, index };
+                perChar.push(entry);
+                byIndex.set(index, entry);
+                continue;
+            }
+            const fbFont = await loadFallbackFont(fbFile, primaryFont);
+            const fbEntry = getSupportEntry(fbFont);
+            // Даже если глифа нет, не считаем это фатальной ошибкой — используем fallback как есть
+            if (!isGlyphSupported(fbFont, fbEntry, cp)) {
+                const entry = { char, codePoint: cp, script, font: fbFont, index };
+                perChar.push(entry);
+                byIndex.set(index, entry);
+                continue;
+            }
+            fonts.add(fbFont);
+            const entry = { char, codePoint: cp, script, font: fbFont, index };
+            perChar.push(entry);
+            byIndex.set(index, entry);
+            continue;
+        }
+
+        if (isGlyphSupported(primaryFont, primaryEntry, cp)) {
+            const entry = { char, codePoint: cp, script, font: primaryFont, index };
+            perChar.push(entry);
+            byIndex.set(index, entry);
+            continue;
+        }
+
+        const fbFile = fallbacks[script];
+        if (!fbFile) {
+            missingScripts.add(script);
+            const entry = { char, codePoint: cp, script, font: primaryFont, index };
+            perChar.push(entry);
+            byIndex.set(index, entry);
+            continue;
+        }
+
+        const fbFont = await loadFallbackFont(fbFile, primaryFont);
+        const fbEntry = getSupportEntry(fbFont);
+        if (isGlyphSupported(fbFont, fbEntry, cp)) {
+            fonts.add(fbFont);
+            const entry = { char, codePoint: cp, script, font: fbFont, index };
+            perChar.push(entry);
+            byIndex.set(index, entry);
+        } else {
+            missingScripts.add(script);
+            const entry = { char, codePoint: cp, script, font: primaryFont, index };
+            perChar.push(entry);
+            byIndex.set(index, entry);
+        }
+    }
+
+    if (missingScripts.size > 0) {
+        throw new Error(`Missing glyphs for scripts: ${Array.from(missingScripts).join(', ')}`);
+    }
+
+    return {
+        text,
+        perChar,
+        byIndex,
+        fonts: Array.from(fonts),
+        primaryFont,
+    };
 }

@@ -1,6 +1,7 @@
 import { Sticker } from '../interfaces/sticker';
 import { ShapeLayer, TransformShape } from '../interfaces/lottie';
 import { Track } from '../shared/keyframes';
+import type { Script } from '../shared/scripts';
 import type {
     TransformAnimationConfig,
     ColorAnimationConfig,
@@ -305,4 +306,6 @@ export interface GenerateStickerOptions {
     duration?: number;
     fontSize?: number;
     seed?: number;
+    /** Переопределение фоллбек-шрифтов по скриптам для конкретного варианта */
+    scriptFallbacks?: Partial<Record<Script, string>>;
 }

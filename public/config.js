@@ -52,6 +52,7 @@
         localColorSets: [],
         localPaletteLoaded: false,
         autoPreview: false,
+        scriptFallbacks: {},
     };
     const MIN_DURATION_FRAMES = 2;
 
@@ -4322,6 +4323,62 @@
         sample.style.fontFamily = previewFontFamily;
     }
 
+    function renderScriptFallbacks() {
+        const container = $('scriptFallbacks');
+        if (!container || !state.meta || !state.meta.defaults) return;
+        const scripts =
+            (state.meta.defaults.scripts && Array.isArray(state.meta.defaults.scripts)
+                ? state.meta.defaults.scripts
+                : Object.keys((state.meta.defaults.fontAnimationConfig || {}).globalFallbacks || [])) || [];
+        const fonts = (state.meta && state.meta.fonts) || [];
+        container.innerHTML = '';
+        if (!scripts.length) {
+            const note = document.createElement('div');
+            note.textContent = 'Скрипты не заданы в конфиге';
+            container.appendChild(note);
+            return;
+        }
+        scripts.forEach((script) => {
+            const row = document.createElement('div');
+            row.className = 'grid grid-3';
+            const label = document.createElement('label');
+            label.textContent = `Фоллбек для ${script}`;
+            const select = document.createElement('select');
+            select.dataset.scriptFallback = script;
+            const empty = document.createElement('option');
+            empty.value = '';
+            const defaultValue =
+                (state.meta.defaults.fontAnimationConfig &&
+                    state.meta.defaults.fontAnimationConfig.globalFallbacks &&
+                    state.meta.defaults.fontAnimationConfig.globalFallbacks[script]) ||
+                '';
+            empty.textContent = defaultValue ? `— (глобальный: ${defaultValue})` : '—';
+            select.appendChild(empty);
+            fonts.forEach((f) => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                select.appendChild(opt);
+            });
+            const current =
+                (state.scriptFallbacks && state.scriptFallbacks[script]) ||
+                (state.activeId === null && defaultValue ? defaultValue : '');
+            if (current) {
+                const exists = fonts.includes(current);
+                if (!exists) {
+                    const opt = document.createElement('option');
+                    opt.value = current;
+                    opt.textContent = `${current} (нет в списке)`;
+                    select.appendChild(opt);
+                }
+                select.value = current;
+            }
+            label.appendChild(select);
+            row.appendChild(label);
+            container.appendChild(row);
+        });
+    }
+
     function renderKnockoutControls() {
         const modeSelect = $('knockoutMode');
         const paddingInput = $('knockoutPadding');
@@ -4874,6 +4931,20 @@
             delete cfg.pathMorphAnimations;
         }
 
+        // Фоллбеки по скриптам
+        const fallbackSelects = document.querySelectorAll('[data-script-fallback]');
+        const sf = {};
+        fallbackSelects.forEach((el) => {
+            if (!(el instanceof HTMLSelectElement)) return;
+            const script = el.dataset.scriptFallback;
+            if (!script) return;
+            const val = el.value || '';
+            if (val) sf[script] = val;
+        });
+        state.scriptFallbacks = sf;
+        if (Object.keys(sf).length) cfg.scriptFallbacks = sf;
+        else delete cfg.scriptFallbacks;
+
         return cfg;
     }
 
@@ -4897,6 +4968,8 @@
         if (cfg.fontFile) {
             $('fontFile').value = cfg.fontFile;
         }
+        state.scriptFallbacks = deepCopy(cfg.scriptFallbacks || {});
+        renderScriptFallbacks();
         const textTransform = cfg.textTransform || {};
         state.textTransform = {
             scale: textTransform.scale != null ? textTransform.scale : 1,
@@ -5524,6 +5597,8 @@
             } else {
                 $('fontFile').value = '';
             }
+            state.scriptFallbacks = {};
+            renderScriptFallbacks();
             state.textTransform = { scale: 1, rotationDeg: 0, offsetX: 0, offsetY: 0 };
             syncTextInputsFromState();
             state.textCurve = {
@@ -5797,6 +5872,7 @@
                 }
                 updateFontFilePreview();
             }
+            renderScriptFallbacks();
             if (meta && meta.defaults) {
                 const widthEl = $('width');
                 const heightEl = $('height');
