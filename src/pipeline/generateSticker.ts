@@ -68,7 +68,7 @@ import { minifySticker } from '../shared/lottieMinifier';
 import type { Script, TextDirection } from '../shared/scripts';
 import { detectTextDirection } from '../shared/scripts';
 
-type LayoutGlyphWithCurve = ReturnType<typeof layoutTextMulti>[number] & {
+type LayoutGlyphWithCurve = Awaited<ReturnType<typeof layoutTextMulti>>[number] & {
     curveScale?: number;
     curveScaleX?: number;
     curveScaleY?: number;
@@ -114,7 +114,7 @@ export async function generateTextSticker(opts: GenerateStickerOptions): Promise
         fontPlan.byIndex.get(indexInText)?.font ?? fontPlan.primaryFont;
     const direction: TextDirection = detectTextDirection(text);
 
-    const { finalFontSize, layout } = prepareLayout(
+    const { finalFontSize, layout } = await prepareLayout(
         text,
         fontPlan,
         resolvedFontSize,
@@ -241,8 +241,8 @@ function buildLettersGroup(
     seed: number,
     textTransform?: TextTransformOptions,
 ): GroupShapeElement {
-    const totalLetters = layout.length || 1;
-    const lettersCount = totalLetters;
+    const grouped = groupByAnimUnit(layout);
+    const lettersCount = grouped.length || 1;
     const group: GroupShapeElement = {
         ty: ShapeType.Group,
         cix: 1,
@@ -266,30 +266,94 @@ function buildLettersGroup(
             params: { ...(desc.params ?? {}), lettersCount },
         }));
 
-    // Layer-level style (applied once per group)
-    for (const glyphInfo of layout) {
-        const { char: ch, glyph, font: glyphFont, x, y, letterIndex, curveScale, curveScaleX, curveScaleY, curveRotation } = glyphInfo;
+    // Layer-level style (applied once per animation unit)
+    grouped.forEach((unit, idx) => {
+        const primary = unit.glyphs[0];
+        const {
+            char: ch,
+            glyph,
+            font: glyphFont,
+            x,
+            y,
+            letterIndex,
+            animUnitIndex,
+            glyphInstanceIndex,
+            contours,
+            curveScale,
+            curveScaleX,
+            curveScaleY,
+            curveRotation,
+        } = primary;
+        const effectiveLetterIndex = animUnitIndex ?? letterIndex ?? idx;
+        const glyphKeyIndex = glyphInstanceIndex ?? effectiveLetterIndex ?? idx;
         const targetScaleX = curveScaleX ?? curveScale ?? 1;
         const targetScaleY = curveScaleY ?? curveScale ?? 1;
         const letterScale = Math.max(0.01, (targetScaleX + targetScaleY) * 0.5);
-        const letterFontSize = fontSize * letterScale;
+
+        // Collect all glyph paths for this unit with relative offsets to the primary glyph origin,
+        // and compute combined bounds so transforms (rotate/scale/vibrate/etc.) pivot around the whole unit.
+        const pathShapes: any[] = [];
+        const bounds = { minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY };
+        for (const g of unit.glyphs) {
+            const dx = g.x - x;
+            const dy = g.y - y;
+            const gTargetScaleX = g.curveScaleX ?? g.curveScale ?? 1;
+            const gTargetScaleY = g.curveScaleY ?? g.curveScale ?? 1;
+            const gLetterScale = Math.max(0.01, (gTargetScaleX + gTargetScaleY) * 0.5);
+            const gFontSize = fontSize * gLetterScale;
+            const shiftedContours =
+                g.contours &&
+                g.contours.map((c) => ({
+                    c: c.c,
+                    i: c.i.map((p) => [p[0], p[1]]),
+                    o: c.o.map((p) => [p[0], p[1]]),
+                    v: c.v.map((p) => [p[0] + dx, p[1] + dy]),
+                }));
+            updateBoundsFromContours(bounds, shiftedContours ?? g.contours);
+            const shapes = glyphToShapes(g.glyph, g.char, effectiveLetterIndex, {
+                fontSize: gFontSize,
+                duration,
+                pathMorphAnimation: pickType(pathMorphAnimations, PathMorphAnimationType.None),
+                pathMorphAnimations,
+                seed,
+                contours: shiftedContours ?? g.contours ?? contours,
+                glyphInstanceIndex: g.glyphInstanceIndex ?? glyphKeyIndex,
+            });
+            pathShapes.push(...shapes);
+        }
+
+        const hasBounds =
+            Number.isFinite(bounds.minX) &&
+            Number.isFinite(bounds.minY) &&
+            Number.isFinite(bounds.maxX) &&
+            Number.isFinite(bounds.maxY);
+        const fallbackBounds = { minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY };
+        updateBoundsFromContours(fallbackBounds, primary.contours);
+        const hasFallback =
+            Number.isFinite(fallbackBounds.minX) &&
+            Number.isFinite(fallbackBounds.minY) &&
+            Number.isFinite(fallbackBounds.maxX) &&
+            Number.isFinite(fallbackBounds.maxY);
         const bbox = glyph.getBoundingBox();
         const unitsPerEm = glyphFont.unitsPerEm || 1000;
-        const glyphScale = letterFontSize / unitsPerEm;
-        const anchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * glyphScale;
-        const anchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * glyphScale);
-        const pathShapes = glyphToShapes(glyph, ch, letterIndex, {
-            fontSize: letterFontSize,
-            duration,
-            pathMorphAnimation: pickType(pathMorphAnimations, PathMorphAnimationType.None),
-            pathMorphAnimations,
-            seed,
-        });
+        const glyphScale = (fontSize * letterScale) / unitsPerEm;
+        const bboxAnchorX = ((bbox.x1 ?? 0) + (bbox.x2 ?? 0)) * 0.5 * glyphScale;
+        const bboxAnchorY = -(((bbox.y1 ?? 0) + (bbox.y2 ?? 0)) * 0.5 * glyphScale);
+        const anchorX = hasBounds
+            ? (bounds.minX + bounds.maxX) * 0.5
+            : hasFallback
+                ? (fallbackBounds.minX + fallbackBounds.maxX) * 0.5
+                : bboxAnchorX;
+        const anchorY = hasBounds
+            ? (bounds.minY + bounds.maxY) * 0.5
+            : hasFallback
+                ? (fallbackBounds.minY + fallbackBounds.maxY) * 0.5
+                : bboxAnchorY;
 
         const anisotropicX = letterScale > 0 ? targetScaleX / letterScale : 1;
         const anisotropicY = letterScale > 0 ? targetScaleY / letterScale : 1;
         const transform = applyLetterAnimations(letterAnimations, {
-            letterIndex,
+            letterIndex: effectiveLetterIndex,
             x,
             y,
             duration,
@@ -304,24 +368,25 @@ function buildLettersGroup(
         });
 
         const items: any[] = [...pathShapes];
-        const phase = lettersCount <= 1 ? 0 : letterIndex / (lettersCount - 1);
+        const phase =
+            lettersCount <= 1 ? 0 : effectiveLetterIndex / Math.max(1, lettersCount - 1);
         const styles = buildLetterStyles(colorAnimationsWithLetters, strokeAnimationsWithLetters, {
             duration,
             letterPhase: phase,
-            letterIndex,
+            letterIndex: effectiveLetterIndex,
         });
         if (styles.fill) items.push(styles.fill);
         if (styles.stroke) items.push(styles.stroke);
         items.push(transform);
         group.it.push({
             ty: ShapeType.Group,
-            cix: 300 + letterIndex,
+            cix: 300 + effectiveLetterIndex,
             it: items,
-            nm: `letter_${letterIndex}`,
+            nm: `letter_${effectiveLetterIndex}`,
             bm: 0,
             hd: false,
         } as any);
-    }
+    });
 
     if (textTransform) {
         const t = buildTextGroupTransform(textTransform);
@@ -331,6 +396,52 @@ function buildLettersGroup(
         }
     }
     return group;
+}
+
+function getLettersCount(layout: LayoutGlyphWithCurve[]): number {
+    return (
+        layout.reduce(
+            (max, g) => Math.max(max, (g.animUnitIndex ?? g.letterIndex ?? 0) + 1),
+            0,
+        ) || 1
+    );
+}
+
+function updateBoundsFromContours(
+    bounds: { minX: number; minY: number; maxX: number; maxY: number },
+    contours: Bezier[] | undefined,
+) {
+    if (!contours || !contours.length) return;
+    for (const c of contours) {
+        const v = c.v || [];
+        const i = c.i || [];
+        const o = c.o || [];
+        for (let idx = 0; idx < v.length; idx++) {
+            const vx = v[idx]?.[0] ?? 0;
+            const vy = v[idx]?.[1] ?? 0;
+            const ix = i[idx]?.[0] ?? 0;
+            const iy = i[idx]?.[1] ?? 0;
+            const ox = o[idx]?.[0] ?? 0;
+            const oy = o[idx]?.[1] ?? 0;
+            bounds.minX = Math.min(bounds.minX, vx, vx + ix, vx + ox);
+            bounds.maxX = Math.max(bounds.maxX, vx, vx + ix, vx + ox);
+            bounds.minY = Math.min(bounds.minY, vy, vy + iy, vy + oy);
+            bounds.maxY = Math.max(bounds.maxY, vy, vy + iy, vy + oy);
+        }
+    }
+}
+
+function groupByAnimUnit(layout: LayoutGlyphWithCurve[]): { unitIndex: number; glyphs: LayoutGlyphWithCurve[] }[] {
+    const byUnit = new Map<number, LayoutGlyphWithCurve[]>();
+    layout.forEach((g) => {
+        const key = g.animUnitIndex ?? g.letterIndex ?? 0;
+        const arr = byUnit.get(key) || [];
+        arr.push(g);
+        byUnit.set(key, arr);
+    });
+    return Array.from(byUnit.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([unitIndex, glyphs]) => ({ unitIndex, glyphs }));
 }
 
 function buildTextGroupTransform(t: TextTransformOptions): TransformShape | null {
@@ -361,7 +472,7 @@ function pickType<T>(descs: AnimationDescriptor<T>[] | undefined, fallback: T): 
     return sorted[0].type;
 }
 
-function prepareLayout(
+async function prepareLayout(
     text: string,
     fontPlan: TextFontPlan,
     fontSize: number,
@@ -370,16 +481,62 @@ function prepareLayout(
     resolveFont: (indexInText: number, ch: string) => opentype.Font,
     direction: TextDirection,
 ) {
-    const { lines, lineItems, finalFontSize, direction: wrapDirection } = wrapAndScaleTextMulti(
-        text,
-        fontSize,
-        width * fontAnimationConfig.maxTextWidthFactor,
-        height * fontAnimationConfig.maxTextHeightFactor,
-        resolveFont,
-    );
-    const resolvedDirection = wrapDirection || direction;
-    const layout = layoutTextMulti(lineItems, finalFontSize, resolveFont, resolvedDirection);
-    return { finalFontSize, layout };
+    const maxWidth = width * fontAnimationConfig.maxTextWidthFactor;
+    const maxHeight = height * fontAnimationConfig.maxTextHeightFactor;
+    let size = fontSize;
+    let lastLayout: Awaited<ReturnType<typeof layoutTextMulti>> = [];
+    let lastFinalSize = size;
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+        const { lineItems, finalFontSize, direction: wrapDirection } = wrapAndScaleTextMulti(
+            text,
+            size,
+            maxWidth,
+            maxHeight,
+            resolveFont,
+            false,
+        );
+        if (process.env.DEBUG_TEXT_LAYOUT === '1') {
+            const dumpItems = (items: { ch: string; index: number }[]) =>
+                items
+                    .map((it) => {
+                        const cp = it.ch.codePointAt(0) ?? 0;
+                        const hex = cp.toString(16).toUpperCase().padStart(4, '0');
+                        return `U+${hex}@${it.index}`;
+                    })
+                    .join(' ');
+            // eslint-disable-next-line no-console
+            console.log('[layout] rawText:', JSON.stringify(text));
+            const lines = lineItems.map((items) => (items || []).map((i) => i.ch).join(''));
+            // In some terminals RTL strings can visually look "reversed" inside arrays.
+            // Print each line with index and LRM markers for reliable reading.
+            for (let li = 0; li < lines.length; li++) {
+                const lrm = '\u200E';
+                const items = lineItems[li] || [];
+                const start = items[0]?.index ?? -1;
+                const last = items[items.length - 1];
+                const end = last ? last.index + last.ch.length : -1;
+                // eslint-disable-next-line no-console
+                console.log(`[layout] wrap line ${li} range=[${start},${end}):`, JSON.stringify(lines[li]));
+                // eslint-disable-next-line no-console
+                console.log(`[layout] wrap line ${li} marks:`, `${lrm}${lines[li]}${lrm}`);
+                // eslint-disable-next-line no-console
+                console.log(`[layout] wrap line ${li} cps:`, dumpItems(items));
+            }
+        }
+        const resolvedDirection = wrapDirection || direction;
+        const layout = await layoutTextMulti(lineItems, finalFontSize, resolveFont, resolvedDirection);
+        lastLayout = layout;
+        lastFinalSize = finalFontSize;
+
+        const { width: layoutWidth, height: layoutHeight } = measureLayoutBounds(layout, finalFontSize);
+        if (layoutWidth <= maxWidth && layoutHeight <= maxHeight) {
+            return { finalFontSize, layout };
+        }
+        size = finalFontSize * 0.9;
+    }
+
+    return { finalFontSize: lastFinalSize, layout: lastLayout };
 }
 
 function prepareLayoutSingle(
@@ -561,6 +718,53 @@ function computeAutoFontSize(text: string, width: number, height: number) {
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
+}
+
+function measureLayoutBounds(layout: LayoutGlyphWithCurve[], fontSize: number): { width: number; height: number } {
+    if (!layout.length) return { width: 0, height: 0 };
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    for (const g of layout) {
+        const contours = (g as any).contours as Bezier[] | undefined;
+        if (contours && contours.length) {
+            for (const c of contours) {
+                const v = c.v || [];
+                const i = c.i || [];
+                const o = c.o || [];
+                for (let idx = 0; idx < v.length; idx++) {
+                    const vx = v[idx]?.[0] ?? 0;
+                    const vy = v[idx]?.[1] ?? 0;
+                    const ix = i[idx]?.[0] ?? 0;
+                    const iy = i[idx]?.[1] ?? 0;
+                    const ox = o[idx]?.[0] ?? 0;
+                    const oy = o[idx]?.[1] ?? 0;
+                    const xs = [vx, vx + ix, vx + ox].map((x) => x + g.x);
+                    const ys = [vy, vy + iy, vy + oy].map((y) => y + g.y);
+                    for (const x of xs) {
+                        minX = Math.min(minX, x);
+                        maxX = Math.max(maxX, x);
+                    }
+                    for (const y of ys) {
+                        minY = Math.min(minY, y);
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+            }
+        } else {
+            minX = Math.min(minX, g.x);
+            maxX = Math.max(maxX, g.x + (g.advance || 0));
+            minY = Math.min(minY, g.y - fontSize);
+            maxY = Math.max(maxY, g.y + fontSize);
+        }
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
+        return { width: 0, height: 0 };
+    }
+    return { width: Math.max(0, maxX - minX), height: Math.max(0, maxY - minY) };
 }
 
 function buildStickerShell(
@@ -958,7 +1162,7 @@ async function buildTextLikeBackground(
         const resolveFont = (indexInText: number, ch: string) =>
             bgPlan.byIndex.get(indexInText)?.font ?? bgPlan.primaryFont;
         const direction: TextDirection = detectTextDirection(text);
-        const prepared = prepareLayout(
+        const prepared = await prepareLayout(
             text,
             bgPlan,
             baseFontSize,
@@ -972,10 +1176,11 @@ async function buildTextLikeBackground(
     }
     const curveOptions = desc.params?.inheritTextCurve === false ? undefined : textCurve;
     const curvedLayout = applyTextCurve(layout, curveOptions, fontSize, font.unitsPerEm);
-    const total = curvedLayout.length || 1;
+    const total = getLettersCount(curvedLayout);
     const groups: GroupShapeElement[] = [];
     curvedLayout.forEach((glyphInfo: LayoutGlyphWithCurve, idx: number) => {
-        const letterIndex = glyphInfo.letterIndex ?? idx;
+        const letterIndex = glyphInfo.animUnitIndex ?? glyphInfo.letterIndex ?? idx;
+        const glyphKeyIndex = glyphInfo.glyphInstanceIndex ?? idx;
         const targetScaleX = glyphInfo.curveScaleX ?? glyphInfo.curveScale ?? 1;
         const targetScaleY = glyphInfo.curveScaleY ?? glyphInfo.curveScale ?? 1;
         const letterScale = Math.max(0.01, (targetScaleX + targetScaleY) * 0.5);
@@ -990,6 +1195,8 @@ async function buildTextLikeBackground(
                 glyphInfo.char.codePointAt(0) ?? letterIndex,
                 ctx.seed,
             ),
+            contours: glyphInfo.contours,
+            glyphInstanceIndex: glyphKeyIndex,
         });
         const bbox = glyphInfo.glyph.getBoundingBox();
         const unitsPerEm = font.unitsPerEm || 1000;
@@ -1015,10 +1222,10 @@ async function buildTextLikeBackground(
         const items: any[] = [...pathShapes];
         const colorPhaseStep = desc.params?.colorPhaseStep;
         const phase = colorPhaseStep != null
-            ? ((idx * colorPhaseStep) % 1)
+            ? ((letterIndex * colorPhaseStep) % 1)
             : total <= 1
                 ? 0
-                : (total - 1 - idx) / total;
+                : (total - 1 - letterIndex) / total;
         const styles = buildLetterStyles(desc.colorAnimations, desc.strokeAnimations, {
             duration: ctx.duration,
             letterPhase: phase,

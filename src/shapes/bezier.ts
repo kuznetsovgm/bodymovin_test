@@ -125,6 +125,27 @@ export function convertOpentypePathToBezier(pathObj: opentype.Path): Bezier[] {
     return contours;
 }
 
+export function scaleBezier(bez: Bezier, scale: number): Bezier {
+    if (!bez) return bez;
+    const s = Number.isFinite(scale) ? scale : 1;
+    if (Math.abs(s - 1) < 1e-6) {
+        // Clone to avoid accidental mutations of cached data
+        return {
+            c: bez.c,
+            i: bez.i.map((p) => [p[0], p[1]]),
+            o: bez.o.map((p) => [p[0], p[1]]),
+            v: bez.v.map((p) => [p[0], p[1]]),
+        };
+    }
+    const round = (v: number) => +(v * s).toFixed(FRACTION_DIGITS);
+    return {
+        c: bez.c,
+        i: bez.i.map((p) => [round(p[0]), round(p[1])]),
+        o: bez.o.map((p) => [round(p[0]), round(p[1])]),
+        v: bez.v.map((p) => [round(p[0]), round(p[1])]),
+    };
+}
+
 function warpHandle(vec: number[], angle: number, scale: number): number[] {
     if (!vec) return [0, 0];
     const cos = Math.cos(angle),

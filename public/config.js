@@ -5684,6 +5684,9 @@
         }
         const previewTextInput = $('previewText');
         if (previewTextInput) {
+            // Keep direction handling in HTML (`dir="auto"`). Changing `dir` dynamically can reset caret and
+            // lead to "reversed" word order while typing in some browsers.
+            previewTextInput.style.unicodeBidi = 'plaintext';
             previewTextInput.addEventListener('input', updateFontFilePreview);
         }
 

@@ -1,4 +1,5 @@
 import opentype from 'opentype.js';
+import { detectTextDirection } from '../shared/scripts';
 
 type WrapResult = { lines: string[]; finalFontSize: number };
 export type CodepointItem = { ch: string; index: number };
@@ -73,19 +74,14 @@ export function wrapAndScaleTextMulti(
     maxWidth: number,
     maxHeight: number,
     resolveFont: (indexInText: number, ch: string) => opentype.Font,
+    bidiReorder: boolean = false,
 ): WrapMultiResult {
     const bidiFactory = require('bidi-js') as () => any;
     const bidi = bidiFactory();
     const embedding = bidi.getEmbeddingLevels(text);
     const mirroredMap: Map<number, string> = bidi.getMirroredCharactersMap(text, embedding);
-    const baseDirection: 'ltr' | 'rtl' =
-        embedding &&
-        embedding.paragraphs &&
-        Array.isArray(embedding.paragraphs) &&
-        embedding.paragraphs.length &&
-        embedding.paragraphs[0].level % 2 === 1
-            ? 'rtl'
-            : 'ltr';
+    // Prefer our heuristic for base direction: bidi-js paragraph level can be forced by LRM/RLM.
+    const baseDirection: 'ltr' | 'rtl' = detectTextDirection(text);
 
     let size = initialFontSize;
     let lines: string[] = [];
@@ -103,15 +99,20 @@ export function wrapAndScaleTextMulti(
         i += ch.length;
     }
 
-    // Глобальный визуальный порядок по bidi
-    const reorderedIndicesFull: number[] = bidi.getReorderedIndices(text, embedding) || [];
+    // Важно: BiDi перестановку для рендера делает shaping-пайплайн (HarfBuzz+BiDi).
+    // Здесь (wrap) bidiReorder используется только для эвристического переноса строк.
     const visualItems: CodepointItem[] = [];
-    if (reorderedIndicesFull.length) {
-        for (const idx of reorderedIndicesFull) {
-            const item = itemByIndex.get(idx);
-            if (!item) continue;
-            const mirrored = mirroredMap.get(idx);
-            visualItems.push(mirrored ? { ...item, ch: mirrored } : item);
+    if (bidiReorder) {
+        const reorderedIndicesFull: number[] = bidi.getReorderedIndices(text, embedding) || [];
+        if (reorderedIndicesFull.length) {
+            for (const idx of reorderedIndicesFull) {
+                const item = itemByIndex.get(idx);
+                if (!item) continue;
+                const mirrored = mirroredMap.get(idx);
+                visualItems.push(mirrored ? { ...item, ch: mirrored } : item);
+            }
+        } else {
+            visualItems.push(...cpItems);
         }
     } else {
         visualItems.push(...cpItems);
@@ -158,9 +159,21 @@ export function wrapAndScaleTextMulti(
         let currentItems: CodepointItem[] = [];
 
         const pushLine = () => {
-            if (currentLine.length) {
-                outLines.push(currentLine);
-                outItems.push([...currentItems]);
+            if (!currentLine.length) {
+                currentLine = '';
+                currentItems = [];
+                return;
+            }
+            // Trim leading/trailing spaces at line boundaries to avoid shifting (especially in RTL)
+            let start = 0;
+            let end = currentItems.length;
+            while (start < end && currentItems[start]?.ch === ' ') start++;
+            while (end > start && currentItems[end - 1]?.ch === ' ') end--;
+            const trimmedItems = currentItems.slice(start, end);
+            const trimmedLine = trimmedItems.map((i) => i.ch).join('');
+            if (trimmedLine.length) {
+                outLines.push(trimmedLine);
+                outItems.push(trimmedItems);
             }
             currentLine = '';
             currentItems = [];
@@ -172,6 +185,10 @@ export function wrapAndScaleTextMulti(
                 continue;
             }
 
+            // Do not start a new line with spaces
+            if (token.type === 'space' && currentItems.length === 0) {
+                continue;
+            }
             const candidateItems = [...currentItems, ...token.items];
             const width = measureItemsWidth(candidateItems, fsz, resolveFont);
 
@@ -180,14 +197,16 @@ export function wrapAndScaleTextMulti(
                 currentItems = candidateItems;
             } else {
                 pushLine();
-                currentLine = token.text;
-                currentItems = [...token.items];
+                if (token.type !== 'space') {
+                    currentLine = token.text;
+                    currentItems = [...token.items];
+                }
             }
         }
 
         pushLine();
 
-        return { lines: outLines, lineItems: outItems, finalFontSize: fsz, direction: 'ltr' };
+        return { lines: outLines, lineItems: outItems, finalFontSize: fsz, direction: baseDirection };
     };
 
     for (let a = 0; a < 20; a++) {
