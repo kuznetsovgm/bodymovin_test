@@ -49,8 +49,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      loki:
-        condition: service_started
     environment:
       - REDIS_URL=redis://redis:6379
       - BOT_TOKEN=${BOT_TOKEN}
@@ -60,9 +58,9 @@ services:
       - PG_PASSWORD=${PG_PASSWORD:-postgres}
       - PG_DB=${PG_DB:-postgres}
       - NODE_ENV=production
-      - METRICS_PORT=3099
-      - LOKI_HOST=http://loki:3100
-      - ENABLE_LOKI=true
+      - METRICS_PORT=${METRICS_PORT:-3099}
+      - LOKI_HOST=${LOKI_HOST:-http://loki:3100}
+      - ENABLE_LOKI=${ENABLE_LOKI:-true}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS}
       - UPLOAD_CHAT_IDS=${UPLOAD_CHAT_IDS}
@@ -91,80 +89,15 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - bodymovin-net
+      bodymovin-net:
+      quickqueue-shared:
+        aliases:
+          - bodymovin-bot
+          - bot
     labels:
       - "prometheus.scrape=true"
       - "prometheus.port=3099"
       - "prometheus.path=/metrics"
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: bodymovin-prometheus
-    restart: unless-stopped
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus-data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
-      - "--web.console.templates=/usr/share/prometheus/consoles"
-      - "--storage.tsdb.retention.time=30d"
-      - "--web.enable-lifecycle"
-    ports:
-      - "127.0.0.1:9099:9090"
-    networks:
-      - bodymovin-net
-    depends_on:
-      - bot
-
-  loki:
-    image: grafana/loki:latest
-    container_name: bodymovin-loki
-    restart: unless-stopped
-    user: "0"
-    ports:
-      - "127.0.0.1:3100:3100"
-    volumes:
-      - ./loki-config.yml:/etc/loki/local-config.yaml
-      - loki-data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - bodymovin-net
-
-  promtail:
-    image: grafana/promtail:latest
-    container_name: bodymovin-promtail
-    restart: unless-stopped
-    volumes:
-      - ./promtail-config.yml:/etc/promtail/config.yml
-      - /var/log:/var/log
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: -config.file=/etc/promtail/config.yml
-    networks:
-      - bodymovin-net
-    depends_on:
-      - loki
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: bodymovin-grafana
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_INSTALL_PLUGINS=
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    networks:
-      - bodymovin-net
-    depends_on:
-      - prometheus
-      - loki
 
   redis-exporter:
     image: oliver006/redis_exporter:latest
@@ -175,7 +108,11 @@ services:
     ports:
       - "127.0.0.1:9121:9121"
     networks:
-      - bodymovin-net
+      bodymovin-net:
+      quickqueue-shared:
+        aliases:
+          - bodymovin-redis-exporter
+          - redis-exporter
     depends_on:
       - redis
       - postgres
@@ -206,15 +143,12 @@ services:
 networks:
   bodymovin-net:
     driver: bridge
+  quickqueue-shared:
+    external: true
+    name: quickqueue-shared
 
 volumes:
   postgres-data:
     driver: local
   redis-data:
-    driver: local
-  prometheus-data:
-    driver: local
-  loki-data:
-    driver: local
-  grafana-data:
     driver: local

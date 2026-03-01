@@ -120,27 +120,26 @@ Worker pool:
 
 ## Мониторинг
 
-Проект включает полный стек мониторинга. См. [MONITORING.md](./MONITORING.md) для подробностей.
+Проект экспортирует метрики и логи в внешний monitoring-compose (Prometheus/Loki/Grafana/Promtail) через общую Docker-сеть `quickqueue-shared`.
 
 ### Быстрый старт с мониторингом:
 
 ```bash
-# Запуск всего стека (бот + Redis + Prometheus + Loki + Grafana)
+# 1) Убедитесь, что внешний monitoring-compose поднят
+#    и использует внешнюю сеть quickqueue-shared
+
+# 2) Запуск стека приложения (бот + Redis + Postgres + Redis Exporter)
 docker-compose up -d
 
-# Проверка статуса
+# 3) Проверка статуса
 docker-compose ps
-
-# Просмотр логов
-docker-compose logs -f bot
 ```
 
 ### Доступ к сервисам:
 
-- **Grafana:** http://localhost:3000 (admin/admin)
-- **Prometheus:** http://localhost:9099
-- **Bot Metrics:** http://localhost:9095/metrics
-- **Bot Health:** http://localhost:9095/health
+- **Bot Metrics:** http://localhost:3099/metrics
+- **Bot Health:** http://localhost:3099/health
+- **Grafana / Prometheus / Loki:** из отдельного monitoring-compose
 
 ### Доступные метрики:
 
@@ -151,4 +150,4 @@ docker-compose logs -f bot
 - Errors rate по типам
 - Memory & CPU usage
 
-См. полный список метрик в [MONITORING.md](./MONITORING.md).
+См. полный список метрик и логов в [MONITORING.md](./MONITORING.md).
