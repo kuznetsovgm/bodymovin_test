@@ -17,7 +17,6 @@ const CONFIG_PREFIX = 'config:';
 const CONFIG_ENABLED_ZSET = 'config:enabled:ordered';
 const LEGACY_CONFIG_ENABLED_SET_KEY = 'config:enabled';
 const LEGACY_CONFIG_ENABLED_ORDER_KEY = 'config:enabled_order';
-const UPLOAD_CHAT_IDS_KEY = 'config:upload_chat_ids';
 const DEBOUNCE_DELAY_KEY = 'config:debounce_delay';
 const USER_RECENT_STICKERS_LIMIT_KEY = 'config:inline:user_recent_limit';
 const INLINE_QUERY_MAX_LENGTH_KEY = 'config:inline:query_max_length';
@@ -35,8 +34,6 @@ const DEFAULT_INLINE_GLOBAL_CONFIG_SCORING_ENABLED = false;
  */
 export class StickerConfigManager {
     private redis: Redis;
-    private uploadChatIdsCache: string[] | null = null;
-    private uploadChatIdsCacheTime: number = 0;
     private debounceDelayCache: number | null = null;
     private debounceDelayCacheTime: number = 0;
     private recentLimitCache: number | null = null;
@@ -58,7 +55,6 @@ export class StickerConfigManager {
             key === CONFIG_ENABLED_ZSET ||
             key === LEGACY_CONFIG_ENABLED_SET_KEY ||
             key === LEGACY_CONFIG_ENABLED_ORDER_KEY ||
-            key === UPLOAD_CHAT_IDS_KEY ||
             key === DEBOUNCE_DELAY_KEY
         );
     }
@@ -605,94 +601,6 @@ export class StickerConfigManager {
             console.error('Error getting enabled count:', error);
             return 0;
         }
-    }
-
-    /**
-     * Save upload chat IDs to Redis
-     */
-    async saveUploadChatIds(chatIds: string[]): Promise<void> {
-        try {
-            await this.redis.set(UPLOAD_CHAT_IDS_KEY, JSON.stringify(chatIds));
-            // Invalidate local cache
-            this.uploadChatIdsCache = null;
-            this.uploadChatIdsCacheTime = 0;
-        } catch (error) {
-            console.error('Error saving upload chat IDs:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get upload chat IDs with local caching (5 minutes TTL)
-     */
-    async getUploadChatIds(): Promise<string[]> {
-        try {
-            // Check if cache is valid
-            const now = Date.now();
-            if (this.uploadChatIdsCache && (now - this.uploadChatIdsCacheTime < CACHE_TTL_MS)) {
-                return this.uploadChatIdsCache;
-            }
-
-            // Fetch from Redis
-            const chatIdsJson = await this.redis.get(UPLOAD_CHAT_IDS_KEY);
-
-            if (!chatIdsJson) {
-                // Return empty array if not configured
-                this.uploadChatIdsCache = [];
-                this.uploadChatIdsCacheTime = now;
-                return [];
-            }
-
-            const chatIds = JSON.parse(chatIdsJson);
-
-            // Update cache
-            this.uploadChatIdsCache = chatIds;
-            this.uploadChatIdsCacheTime = now;
-
-            return chatIds;
-        } catch (error) {
-            console.error('Error getting upload chat IDs:', error);
-            // Return cached value if available, otherwise empty array
-            return this.uploadChatIdsCache || [];
-        }
-    }
-
-    /**
-     * Add an upload chat ID
-     */
-    async addUploadChatId(chatId: string): Promise<void> {
-        try {
-            const chatIds = await this.getUploadChatIds();
-            if (!chatIds.includes(chatId)) {
-                chatIds.push(chatId);
-                await this.saveUploadChatIds(chatIds);
-            }
-        } catch (error) {
-            console.error('Error adding upload chat ID:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Remove an upload chat ID
-     */
-    async removeUploadChatId(chatId: string): Promise<void> {
-        try {
-            const chatIds = await this.getUploadChatIds();
-            const filtered = chatIds.filter(id => id !== chatId);
-            await this.saveUploadChatIds(filtered);
-        } catch (error) {
-            console.error('Error removing upload chat ID:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Clear local cache for upload chat IDs
-     */
-    clearUploadChatIdsCache(): void {
-        this.uploadChatIdsCache = null;
-        this.uploadChatIdsCacheTime = 0;
     }
 
     /**

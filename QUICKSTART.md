@@ -14,7 +14,6 @@ cp .env.example .env
 
 ```bash
 BOT_TOKEN=your_actual_bot_token_here
-UPLOAD_CHAT_IDS=your_chat_id
 ADMIN_USER_IDS=your_user_id
 ```
 
@@ -146,15 +145,6 @@ npm run watch
 /disable_all - выключить все
 ```
 
-### Управление чатами для загрузки
-
-```
-/list_upload_chats - показать текущие чаты
-/set_upload_chats <id1>,<id2>,<id3> - установить чаты
-/add_upload_chat <id> - добавить чат
-/remove_upload_chat <id> - удалить чат
-```
-
 ### Настройки
 
 ```
@@ -190,9 +180,8 @@ npm run watch
 
 ### Стикеры не загружаются
 
-1. Убедитесь, что указаны `UPLOAD_CHAT_IDS` в `.env`
-2. Бот должен быть добавлен в эти чаты с правами отправки сообщений
-3. Проверьте логи загрузки:
+1. Убедитесь, что пользователь запустил бота или уже взаимодействовал с ним
+2. Проверьте логи загрузки:
    ```bash
    docker-compose logs bot | grep -i upload
    ```

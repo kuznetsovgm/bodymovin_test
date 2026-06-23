@@ -96,26 +96,6 @@ metricsServer.listen(METRICS_PORT, () => {
 // Initialize sticker config manager
 const stickerConfigManager = new StickerConfigManager(stickerCache.getRedis());
 
-// Initialize upload chat IDs from environment variable (if provided)
-const UPLOAD_CHAT_IDS_ENV = (process.env.UPLOAD_CHAT_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
-
-// Initialize Redis with UPLOAD_CHAT_IDS from env on startup
-if (UPLOAD_CHAT_IDS_ENV.length > 0) {
-    stickerConfigManager.getUploadChatIds().then(async (redisIds) => {
-        if (redisIds.length === 0) {
-            logger.info('Initializing upload chat IDs from environment variable...');
-            await stickerConfigManager.saveUploadChatIds(UPLOAD_CHAT_IDS_ENV);
-            logger.info(`✓ Initialized ${UPLOAD_CHAT_IDS_ENV.length} upload chat IDs`);
-        }
-    }).catch(err => {
-        logger.error('Error initializing upload chat IDs:', err);
-        logError(err as Error, { context: 'upload_chat_ids_init' });
-    });
-}
-
 // Debounce state for inline queries
 const debounceTimers = new Map<string, NodeJS.Timeout>();
 
@@ -143,44 +123,35 @@ function isAdmin(userId: number): boolean {
     return ADMIN_USER_IDS.includes(userId);
 }
 
-// Store which chat was used last for round-robin distribution
-let lastUsedChatIndex = 0;
-
 async function uploadStickerToTelegram(
     ctx: Context,
     stickerBuffer: Buffer,
 ): Promise<string | null> {
     const startTime = Date.now();
+    const userId = ctx.from?.id;
 
-    // Get upload chat IDs from Redis (with local cache)
-    const uploadChatIds = await stickerConfigManager.getUploadChatIds();
-
-    if (uploadChatIds.length === 0) {
-        logger.error('No upload chat IDs configured. Use /set_upload_chats command.');
-        errorsTotal.inc({ error_type: 'no_upload_chats' });
+    if (!userId) {
+        logger.error('Cannot upload sticker: missing requesting user id.');
+        errorsTotal.inc({ error_type: 'missing_upload_user' });
         return null;
     }
 
-    // Use round-robin to distribute uploads across chats (avoid rate limits)
-    const chatId = uploadChatIds[lastUsedChatIndex];
-    lastUsedChatIndex = (lastUsedChatIndex + 1) % uploadChatIds.length;
-
     try {
-        const file = await ctx.telegram.uploadStickerFile(+chatId, Input.fromBuffer(stickerBuffer, 'sticker.tgs'), 'animated');
+        const file = await ctx.telegram.uploadStickerFile(userId, Input.fromBuffer(stickerBuffer, 'sticker.tgs'), 'animated');
         const fileId = file.file_id;
         const duration = (Date.now() - startTime) / 1000;
 
         if (fileId) {
             uploadDuration.observe(duration);
-            logUpload(fileId, chatId, true, duration);
-            logger.info(`Uploaded sticker to chat ${chatId}, file_id: ${fileId}`);
+            logUpload(fileId, userId.toString(), true, duration);
+            logger.info(`Uploaded sticker for user ${userId}, file_id: ${fileId}`);
             return fileId;
         }
     } catch (error) {
         const duration = (Date.now() - startTime) / 1000;
         errorsTotal.inc({ error_type: 'upload_error' });
-        logUpload('', chatId, false, duration, (error as Error).message);
-        logger.error(`Failed to upload sticker to chat ${chatId}:`, error);
+        logUpload('', userId.toString(), false, duration, (error as Error).message);
+        logger.error(`Failed to upload sticker for user ${userId}:`, error);
     }
     return null;
 }
@@ -762,116 +733,6 @@ bot.command('view_config', async (ctx) => {
     } catch (error) {
         console.error('Error viewing config:', error);
         await ctx.reply('❌ Error viewing configuration.');
-    }
-});
-
-// Admin command: List upload chat IDs
-bot.command('list_upload_chats', async (ctx) => {
-    if (!isAdmin(ctx.from.id)) {
-        await ctx.reply('❌ You are not authorized to use this command.');
-        return;
-    }
-
-    try {
-        const chatIds = await stickerConfigManager.getUploadChatIds();
-
-        if (chatIds.length === 0) {
-            await ctx.reply('📭 No upload chat IDs configured.\n\nUse /add_upload_chat <chat_id> to add one.');
-            return;
-        }
-
-        let message = `📋 *Upload Chat IDs* (${chatIds.length} total)\n\n`;
-        chatIds.forEach((id, index) => {
-            message += `${index + 1}. \`${id}\`\n`;
-        });
-
-        await ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Error listing upload chat IDs:', error);
-        await ctx.reply('❌ Error listing upload chat IDs.');
-    }
-});
-
-// Admin command: Add upload chat ID
-bot.command('add_upload_chat', async (ctx) => {
-    if (!isAdmin(ctx.from.id)) {
-        await ctx.reply('❌ You are not authorized to use this command.');
-        return;
-    }
-
-    const args = ctx.message.text.split(' ');
-    if (args.length < 2) {
-        await ctx.reply('Usage: /add_upload_chat <chat_id>\n\nExample: /add_upload_chat 123456789');
-        return;
-    }
-
-    const chatId = args[1];
-
-    try {
-        await stickerConfigManager.addUploadChatId(chatId);
-        await ctx.reply(`✅ Chat ID \`${chatId}\` has been added to upload chats.`, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Error adding upload chat ID:', error);
-        await ctx.reply('❌ Error adding upload chat ID.');
-    }
-});
-
-// Admin command: Remove upload chat ID
-bot.command('remove_upload_chat', async (ctx) => {
-    if (!isAdmin(ctx.from.id)) {
-        await ctx.reply('❌ You are not authorized to use this command.');
-        return;
-    }
-
-    const args = ctx.message.text.split(' ');
-    if (args.length < 2) {
-        await ctx.reply('Usage: /remove_upload_chat <chat_id>\n\nUse /list_upload_chats to see available chat IDs.');
-        return;
-    }
-
-    const chatId = args[1];
-
-    try {
-        await stickerConfigManager.removeUploadChatId(chatId);
-        await ctx.reply(`✅ Chat ID \`${chatId}\` has been removed from upload chats.`, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Error removing upload chat ID:', error);
-        await ctx.reply('❌ Error removing upload chat ID.');
-    }
-});
-
-// Admin command: Set all upload chat IDs at once
-bot.command('set_upload_chats', async (ctx) => {
-    if (!isAdmin(ctx.from.id)) {
-        await ctx.reply('❌ You are not authorized to use this command.');
-        return;
-    }
-
-    const args = ctx.message.text.split(' ');
-    if (args.length < 2) {
-        await ctx.reply('Usage: /set_upload_chats <chat_id1,chat_id2,...>\n\nExample: /set_upload_chats 123456789,987654321');
-        return;
-    }
-
-    const chatIdsStr = args.slice(1).join(' ');
-    const chatIds = chatIdsStr.split(',').map(id => id.trim()).filter(id => id.length > 0);
-
-    if (chatIds.length === 0) {
-        await ctx.reply('❌ No valid chat IDs provided.');
-        return;
-    }
-
-    try {
-        await stickerConfigManager.saveUploadChatIds(chatIds);
-        await ctx.reply(
-            `✅ Upload chat IDs updated!\n\n` +
-            `Set ${chatIds.length} chat ID(s):\n` +
-            chatIds.map((id, i) => `${i + 1}. \`${id}\``).join('\n'),
-            { parse_mode: 'Markdown' }
-        );
-    } catch (error) {
-        console.error('Error setting upload chat IDs:', error);
-        await ctx.reply('❌ Error setting upload chat IDs.');
     }
 });
 

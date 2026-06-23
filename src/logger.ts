@@ -86,11 +86,11 @@ export const logStickerGeneration = (
     });
 };
 
-export const logUpload = (fileId: string, chatId: string, success: boolean, duration: number, error?: string) => {
+export const logUpload = (fileId: string, ownerId: string, success: boolean, duration: number, error?: string) => {
     logger.info('Sticker upload', {
         event: 'sticker_upload',
         fileId,
-        chatId,
+        ownerId,
         success,
         duration,
         error,
