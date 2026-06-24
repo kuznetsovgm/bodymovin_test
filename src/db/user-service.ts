@@ -35,4 +35,22 @@ export class UserService {
             logger.error('Failed to upsert user', error);
         }
     }
+
+    async getUploadOwnerIds(): Promise<number[]> {
+        try {
+            const repo = await this.getRepo();
+            const users = await repo.find({
+                select: ['telegramId'],
+                order: { updatedAt: 'DESC' },
+            });
+            const ownerIds = users
+                .map((user) => Number(user.telegramId))
+                .filter((id) => Number.isSafeInteger(id));
+
+            return ownerIds;
+        } catch (error) {
+            logger.error('Failed to load upload owner users', error);
+            return [];
+        }
+    }
 }
