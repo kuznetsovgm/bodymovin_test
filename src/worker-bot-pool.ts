@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Input, Telegraf } from 'telegraf';
 import { SerialUploadQueue } from './serial-upload-queue';
 import { logger } from './logger';
 
@@ -108,7 +108,7 @@ export class WorkerBotPool {
             const fileId = await worker.queue.enqueue(async () => {
                 const message = await worker.bot.telegram.sendSticker(
                     this.channelId,
-                    { source: buffer },
+                    Input.fromBuffer(buffer, 'sticker.tgs'),
                 );
                 return message.sticker?.file_id ?? null;
             });
