@@ -1250,7 +1250,7 @@ async function reloadWorkerBotPool(): Promise<void> {
   workerBotPool.reload(tokens);
 }
 
-bot.command('add_worker_bot', async (ctx) => {
+bot.command('addworkerbot', async (ctx) => {
   if (!isAdmin(ctx.from.id)) {
     await ctx.reply('❌ You are not authorized to use this command.');
     return;
@@ -1258,7 +1258,7 @@ bot.command('add_worker_bot', async (ctx) => {
 
   const args = ctx.message.text.split(' ');
   if (args.length < 2) {
-    await ctx.reply('Usage: /add_worker_bot <token>');
+    await ctx.reply('Usage: /addworkerbot <token>');
     return;
   }
 
@@ -1277,7 +1277,7 @@ bot.command('add_worker_bot', async (ctx) => {
   }
 });
 
-bot.command('list_worker_bots', async (ctx) => {
+bot.command('listworkerbots', async (ctx) => {
   if (!isAdmin(ctx.from.id)) {
     await ctx.reply('❌ You are not authorized to use this command.');
     return;
@@ -1287,7 +1287,7 @@ bot.command('list_worker_bots', async (ctx) => {
     const tokens = await workerBotTokenService.listAll();
     if (tokens.length === 0) {
       await ctx.reply(
-        'No worker bots configured.\n\nUse /add_worker_bot <token> to add one.\n' +
+        'No worker bots configured.\n\nUse /addworkerbot <token> to add one.\n' +
           (WORKER_CHANNEL_ID ? `Channel: \`${WORKER_CHANNEL_ID}\`` : '⚠️ WORKER_CHANNEL_ID not set'),
         { parse_mode: 'Markdown' },
       );
@@ -1312,7 +1312,7 @@ bot.command('list_worker_bots', async (ctx) => {
   }
 });
 
-bot.command('enable_worker_bot', async (ctx) => {
+bot.command('enableworkerbot', async (ctx) => {
   if (!isAdmin(ctx.from.id)) {
     await ctx.reply('❌ You are not authorized to use this command.');
     return;
@@ -1320,7 +1320,7 @@ bot.command('enable_worker_bot', async (ctx) => {
 
   const args = ctx.message.text.split(' ');
   if (args.length < 2) {
-    await ctx.reply('Usage: /enable_worker_bot <id>\n\nUse /list_worker_bots to see IDs.');
+    await ctx.reply('Usage: /enableworkerbot <id>\n\nUse /listworkerbots to see IDs.');
     return;
   }
 
@@ -1337,7 +1337,7 @@ bot.command('enable_worker_bot', async (ctx) => {
   }
 });
 
-bot.command('disable_worker_bot', async (ctx) => {
+bot.command('disableworkerbot', async (ctx) => {
   if (!isAdmin(ctx.from.id)) {
     await ctx.reply('❌ You are not authorized to use this command.');
     return;
@@ -1345,7 +1345,7 @@ bot.command('disable_worker_bot', async (ctx) => {
 
   const args = ctx.message.text.split(' ');
   if (args.length < 2) {
-    await ctx.reply('Usage: /disable_worker_bot <id>\n\nUse /list_worker_bots to see IDs.');
+    await ctx.reply('Usage: /disableworkerbot <id>\n\nUse /listworkerbots to see IDs.');
     return;
   }
 
