@@ -42,6 +42,8 @@ import { toSafeErrorDetails } from './safe-error-log';
 import { BotFloodWaitError, SerialUploadQueue } from './serial-upload-queue';
 import {
   buildInlineNextOffset,
+  getUndeliveredInlineResults,
+  parseInlineProgressOffset,
   shouldAnswerInlineBatch,
 } from './inline-next-offset';
 
@@ -308,6 +310,7 @@ type StickerBatchJob = {
   limit: number;
   totalEnabled: number;
   results: (InlineQueryResult | null)[];
+  publishedResults: InlineQueryResult[];
   pendingCount: number;
   completed: boolean;
   startedAt: number;
@@ -334,9 +337,7 @@ function buildCachedStickerResult(
 }
 
 function getReadyJobResults(job: StickerBatchJob): InlineQueryResult[] {
-  return job.results.filter((result): result is InlineQueryResult =>
-    Boolean(result),
-  );
+  return job.publishedResults;
 }
 
 function notifyStickerBatchJob(job: StickerBatchJob): void {
@@ -354,8 +355,13 @@ function notifyStickerBatchJob(job: StickerBatchJob): void {
 function waitForJobReadyResults(
   job: StickerBatchJob,
   timeoutMs: number,
+  deliveredCount = 0,
 ): Promise<void> {
-  if (job.completed || getReadyJobResults(job).length > 0 || timeoutMs <= 0) {
+  if (
+    job.completed ||
+    getReadyJobResults(job).length > deliveredCount ||
+    timeoutMs <= 0
+  ) {
     return Promise.resolve();
   }
 
@@ -476,6 +482,7 @@ async function getOrCreateStickerBatchJob(
     limit: totalItems,
     totalEnabled: enabledConfigs.length,
     results: new Array(totalItems).fill(null),
+    publishedResults: [],
     pendingCount: 0,
     completed: false,
     startedAt: Date.now(),
@@ -491,7 +498,9 @@ async function getOrCreateStickerBatchJob(
 
     if (fileId) {
       cacheHitsTotal.inc({ cache_type: 'sticker' });
-      job.results[batchIndex] = buildCachedStickerResult(configId, fileId);
+      const cachedResult = buildCachedStickerResult(configId, fileId);
+      job.results[batchIndex] = cachedResult;
+      job.publishedResults.push(cachedResult);
       logger.debug(
         `[${i + 1}/${enabledConfigs.length}] Using cached sticker for "${normalizedText}" (config: ${configId})`,
       );
@@ -562,12 +571,14 @@ async function processStickerGenerationTask(
           logger.info(`[${index + 1}/${job.totalEnabled}] ✓ Success`);
 
           const batchIndex = index - job.offset;
+          const stickerResult = buildCachedStickerResult(
+            task.configId,
+            uploadedFileId,
+          );
           if (batchIndex >= 0 && batchIndex < job.results.length) {
-            job.results[batchIndex] = buildCachedStickerResult(
-              task.configId,
-              uploadedFileId,
-            );
+            job.results[batchIndex] = stickerResult;
           }
+          job.publishedResults.push(stickerResult);
         } else {
           stickersGeneratedTotal.inc({
             animation_type: animType,
@@ -633,7 +644,8 @@ async function processStickerGenerationTask(
 // Inline query handler with pagination
 bot.on('inline_query', async (ctx) => {
   let query = ctx.inlineQuery.query || '';
-  const offset = parseInt(ctx.inlineQuery.offset || '0');
+  const inlineOffset = parseInlineProgressOffset(ctx.inlineQuery.offset || '');
+  const offset = inlineOffset.offset;
   const queryStartTime = Date.now();
 
   const maxLength = await stickerConfigManager.getInlineQueryMaxLength();
@@ -752,7 +764,7 @@ bot.on('inline_query', async (ctx) => {
     buildCachedRangeResults(STICKERS_PER_PAGE_CACHED) ??
     buildCachedRangeResults(STICKER_GENERATION_BATCH_SIZE);
 
-  if (cachedRange && cachedRange.length > 0) {
+  if (!inlineOffset.isProgressOffset && cachedRange && cachedRange.length > 0) {
     const nextOffset =
       offset + cachedRange.length < totalEnabled
         ? (offset + cachedRange.length).toString()
@@ -780,9 +792,16 @@ bot.on('inline_query', async (ctx) => {
     );
 
     if (job) {
-      await waitForJobReadyResults(job, INLINE_FIRST_RESULT_WAIT_MS);
+      await waitForJobReadyResults(
+        job,
+        INLINE_FIRST_RESULT_WAIT_MS,
+        inlineOffset.deliveredCount,
+      );
 
-      const results = getReadyJobResults(job);
+      const results = getUndeliveredInlineResults(
+        getReadyJobResults(job),
+        inlineOffset.deliveredCount,
+      );
       if (
         !shouldAnswerInlineBatch({
           readyCount: results.length,
@@ -802,6 +821,8 @@ bot.on('inline_query', async (ctx) => {
         batchSize: job.limit,
         totalEnabled,
         completed: job.completed,
+        deliveredCount: inlineOffset.deliveredCount,
+        returnedCount: results.length,
       });
 
       await ctx.answerInlineQuery(results, {
@@ -816,11 +837,14 @@ bot.on('inline_query', async (ctx) => {
       return;
     }
 
-    const partialCachedResults = buildCachedPartialResults(
-      enabledConfigs,
-      allCachedFileIds,
-      offset,
-      STICKER_GENERATION_BATCH_SIZE,
+    const partialCachedResults = getUndeliveredInlineResults(
+      buildCachedPartialResults(
+        enabledConfigs,
+        allCachedFileIds,
+        offset,
+        STICKER_GENERATION_BATCH_SIZE,
+      ),
+      inlineOffset.deliveredCount,
     );
 
     await ctx.answerInlineQuery(partialCachedResults, {
