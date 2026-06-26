@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf } from 'telegraf';
 import {
   InlineQueryResult,
   InlineQueryResultCachedSticker,
@@ -39,6 +39,7 @@ import { createSaveUserMiddleware } from './db/user-middleware';
 import { getDataSource } from './db/data-source';
 import { UploadOwnerSelector } from './upload-owner-selector';
 import { toSafeErrorDetails } from './safe-error-log';
+import { BotFloodWaitError, SerialUploadQueue } from './serial-upload-queue';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -59,9 +60,29 @@ const STICKER_STATS_HASH_KEY = 'sticker:stats';
 const STICKER_STATS_ZSET_KEY = 'sticker:stats:zset';
 const USER_RECENT_KEY_PREFIX = 'user';
 const MAX_UPLOAD_ATTEMPTS = 5;
+const STICKER_GENERATION_BATCH_SIZE =
+  parseInt(process.env.STICKERS_PER_GENERATION_BATCH || '10', 10) || 10;
+const STICKERS_PER_PAGE_CACHED =
+  parseInt(process.env.STICKERS_PER_PAGE_CACHED || '20', 10) || 20;
+const INLINE_FIRST_RESULT_WAIT_MS =
+  parseInt(process.env.INLINE_FIRST_RESULT_WAIT_MS || '7000', 10) || 7000;
+const ACTIVE_STICKER_JOB_TTL_MS =
+  parseInt(process.env.ACTIVE_STICKER_JOB_TTL_MS || '300000', 10) || 300000;
+const MAX_ACTIVE_STICKER_JOBS =
+  parseInt(process.env.MAX_ACTIVE_STICKER_JOBS || '50', 10) || 50;
+const MAX_UPLOAD_QUEUE_SIZE =
+  parseInt(process.env.MAX_UPLOAD_QUEUE_SIZE || '100', 10) || 100;
+const UPLOAD_MIN_INTERVAL_MS = Math.max(
+  0,
+  parseInt(process.env.UPLOAD_MIN_INTERVAL_MS || '0', 10) || 0,
+);
 
 // Initialize worker pool
 const workerPool = new StickerWorkerPool(WORKER_POOL_SIZE, WORKER_QUEUE_SIZE);
+const telegramUploadQueue = new SerialUploadQueue({
+  maxQueueSize: MAX_UPLOAD_QUEUE_SIZE,
+  minIntervalMs: UPLOAD_MIN_INTERVAL_MS,
+});
 
 async function resolveResultStickerBuffer(
   result: StickerGenerationResult,
@@ -112,9 +133,6 @@ metricsServer.listen(METRICS_PORT, () => {
 // Initialize sticker config manager
 const stickerConfigManager = new StickerConfigManager(stickerCache.getRedis());
 
-// Debounce state for inline queries
-const debounceTimers = new Map<string, NodeJS.Timeout>();
-
 // Initialize debounce delay from environment variable (if provided)
 const DEBOUNCE_DELAY_ENV = parseInt(process.env.DEBOUNCE_DELAY || '2000', 10);
 if (DEBOUNCE_DELAY_ENV > 0) {
@@ -145,47 +163,124 @@ function isAdmin(userId: number): boolean {
   return ADMIN_USER_IDS.includes(userId);
 }
 
+type StickerUploadAttemptResult = {
+  fileId: string | null;
+  retryable: boolean;
+  rateLimited?: boolean;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getTelegramRetryAfterSeconds(error: unknown): number | null {
+  const errorRecord = asRecord(error);
+  const response = asRecord(errorRecord?.response);
+  const parameters =
+    asRecord(errorRecord?.parameters) ?? asRecord(response?.parameters);
+  const errorCode =
+    typeof errorRecord?.code === 'number'
+      ? errorRecord.code
+      : typeof response?.error_code === 'number'
+        ? response.error_code
+        : null;
+
+  if (errorCode !== 429) {
+    return null;
+  }
+
+  return typeof parameters?.retry_after === 'number'
+    ? parameters.retry_after
+    : 300;
+}
+
+async function uploadStickerOnce(
+  stickerBuffer: Buffer,
+): Promise<StickerUploadAttemptResult> {
+  const ownerId = await uploadOwnerSelector.getNextOwnerId();
+
+  if (!ownerId) {
+    logger.error('Cannot upload sticker: no users found in database.');
+    errorsTotal.inc({ error_type: 'no_upload_users' });
+    return { fileId: null, retryable: false };
+  }
+
+  const startTime = Date.now();
+
+  try {
+    const file = await bot.telegram.uploadStickerFile(
+      ownerId,
+      Input.fromBuffer(stickerBuffer, 'sticker.tgs'),
+      'animated',
+    );
+    const fileId = file.file_id;
+    const duration = (Date.now() - startTime) / 1000;
+
+    if (fileId) {
+      uploadDuration.observe(duration);
+      logUpload(fileId, ownerId.toString(), true, duration);
+      logger.info(`Uploaded sticker for user ${ownerId}, file_id: ${fileId}`);
+      return { fileId, retryable: false };
+    }
+
+    logUpload('', ownerId.toString(), false, duration, 'Missing file_id');
+    logger.error(
+      `Failed to upload sticker for user ${ownerId}: missing file_id`,
+    );
+    return { fileId: null, retryable: true };
+  } catch (error) {
+    const duration = (Date.now() - startTime) / 1000;
+    const retryAfterSeconds = getTelegramRetryAfterSeconds(error);
+    const safeError = toSafeErrorDetails(error);
+
+    if (retryAfterSeconds !== null) {
+      telegramUploadQueue.setBotFloodWait(retryAfterSeconds);
+      errorsTotal.inc({ error_type: 'upload_rate_limited' });
+      logUpload('', ownerId.toString(), false, duration, safeError.message);
+      logger.warn(
+        `Telegram bot-wide upload flood wait: ${retryAfterSeconds}s`,
+        safeError,
+      );
+      return { fileId: null, retryable: false, rateLimited: true };
+    }
+
+    errorsTotal.inc({ error_type: 'upload_error' });
+    logUpload('', ownerId.toString(), false, duration, safeError.message);
+    logger.error(`Failed to upload sticker for user ${ownerId}`, safeError);
+    return { fileId: null, retryable: true };
+  }
+}
+
 async function uploadStickerToTelegram(
-  ctx: Context,
   stickerBuffer: Buffer,
 ): Promise<string | null> {
   for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS; attempt++) {
-    const ownerId = await uploadOwnerSelector.getNextOwnerId();
-
-    if (!ownerId) {
-      logger.error('Cannot upload sticker: no users found in database.');
-      errorsTotal.inc({ error_type: 'no_upload_users' });
-      return null;
-    }
-
-    const startTime = Date.now();
-
     try {
-      const file = await ctx.telegram.uploadStickerFile(
-        ownerId,
-        Input.fromBuffer(stickerBuffer, 'sticker.tgs'),
-        'animated',
+      const result = await telegramUploadQueue.enqueue(() =>
+        uploadStickerOnce(stickerBuffer),
       );
-      const fileId = file.file_id;
-      const duration = (Date.now() - startTime) / 1000;
 
-      if (fileId) {
-        uploadDuration.observe(duration);
-        logUpload(fileId, ownerId.toString(), true, duration);
-        logger.info(`Uploaded sticker for user ${ownerId}, file_id: ${fileId}`);
-        return fileId;
+      if (result.fileId) {
+        return result.fileId;
       }
 
-      logUpload('', ownerId.toString(), false, duration, 'Missing file_id');
-      logger.error(
-        `Failed to upload sticker for user ${ownerId}: missing file_id`,
-      );
+      if (!result.retryable || result.rateLimited) {
+        return null;
+      }
     } catch (error) {
-      const duration = (Date.now() - startTime) / 1000;
-      const safeError = toSafeErrorDetails(error);
-      errorsTotal.inc({ error_type: 'upload_error' });
-      logUpload('', ownerId.toString(), false, duration, safeError.message);
-      logger.error(`Failed to upload sticker for user ${ownerId}`, safeError);
+      if (error instanceof BotFloodWaitError) {
+        errorsTotal.inc({ error_type: 'upload_rate_limited' });
+        logger.warn(
+          `Skipping sticker upload during bot-wide flood wait: ${error.retryAfterSeconds}s`,
+        );
+        return null;
+      }
+
+      errorsTotal.inc({ error_type: 'upload_queue_error' });
+      logger.error('Failed to enqueue sticker upload', toSafeErrorDetails(error));
+      return null;
     }
   }
 
@@ -202,17 +297,151 @@ type PreloadedConfigData = {
   cachedFileIds?: (string | null)[];
 };
 
-async function generateAndCacheStickers(
-  ctx: Context,
+type StickerBatchJob = {
+  key: string;
+  normalizedText: string;
+  offset: number;
+  limit: number;
+  totalEnabled: number;
+  results: (InlineQueryResult | null)[];
+  pendingCount: number;
+  completed: boolean;
+  startedAt: number;
+  lastAccessAt: number;
+  waiters: Set<() => void>;
+};
+
+const activeStickerJobs = new Map<string, StickerBatchJob>();
+
+function buildStickerBatchJobKey(normalizedText: string, offset: number): string {
+  const textHash = crypto.createHash('sha1').update(normalizedText).digest('hex');
+  return `${offset}:${textHash}`;
+}
+
+function buildCachedStickerResult(
+  configId: string,
+  fileId: string,
+): InlineQueryResultCachedSticker {
+  return {
+    type: 'sticker',
+    id: configId,
+    sticker_file_id: fileId,
+  } as InlineQueryResultCachedSticker;
+}
+
+function getReadyJobResults(job: StickerBatchJob): InlineQueryResult[] {
+  return job.results.filter((result): result is InlineQueryResult =>
+    Boolean(result),
+  );
+}
+
+function notifyStickerBatchJob(job: StickerBatchJob): void {
+  if (!job.completed && getReadyJobResults(job).length === 0) {
+    return;
+  }
+
+  const waiters = Array.from(job.waiters);
+  job.waiters.clear();
+  for (const waiter of waiters) {
+    waiter();
+  }
+}
+
+function waitForJobReadyResults(
+  job: StickerBatchJob,
+  timeoutMs: number,
+): Promise<void> {
+  if (job.completed || getReadyJobResults(job).length > 0 || timeoutMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const waiter = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      job.waiters.delete(waiter);
+      resolve();
+    }, timeoutMs);
+
+    job.waiters.add(waiter);
+  });
+}
+
+function cleanupActiveStickerJobs(): void {
+  const now = Date.now();
+
+  for (const [key, job] of activeStickerJobs) {
+    if (now - job.lastAccessAt > ACTIVE_STICKER_JOB_TTL_MS) {
+      activeStickerJobs.delete(key);
+    }
+  }
+
+  while (activeStickerJobs.size > MAX_ACTIVE_STICKER_JOBS) {
+    let oldestKey: string | null = null;
+    let oldestAccessAt = Number.POSITIVE_INFINITY;
+
+    for (const [key, job] of activeStickerJobs) {
+      if (job.lastAccessAt < oldestAccessAt) {
+        oldestKey = key;
+        oldestAccessAt = job.lastAccessAt;
+      }
+    }
+
+    if (!oldestKey) {
+      return;
+    }
+
+    activeStickerJobs.delete(oldestKey);
+  }
+}
+
+function buildCachedPartialResults(
+  enabledConfigs: EnabledStickerConfig[],
+  cachedFileIds: (string | null)[],
+  offset: number,
+  limit: number,
+): InlineQueryResult[] {
+  const endIndex = Math.min(offset + limit, enabledConfigs.length);
+  const results: InlineQueryResult[] = [];
+
+  for (let i = offset; i < endIndex; i++) {
+    const fileId = cachedFileIds[i];
+    if (!fileId) {
+      continue;
+    }
+
+    results.push(buildCachedStickerResult(enabledConfigs[i].id, fileId));
+  }
+
+  return results;
+}
+
+async function getOrCreateStickerBatchJob(
   text: string,
   offset: number,
   limit: number,
   preloaded?: PreloadedConfigData,
-): Promise<InlineQueryResult[]> {
-  if (!text.trim()) {
-    return [];
-  }
+): Promise<StickerBatchJob | null> {
   const normalizedText = text.trim();
+  if (!normalizedText) {
+    return null;
+  }
+
+  cleanupActiveStickerJobs();
+
+  const key = buildStickerBatchJobKey(normalizedText, offset);
+  const existingJob = activeStickerJobs.get(key);
+  if (existingJob) {
+    existingJob.lastAccessAt = Date.now();
+    return existingJob;
+  }
+
+  if (telegramUploadQueue.isFloodLimited()) {
+    logger.warn('Skipping sticker generation while bot-wide upload flood wait is active');
+    return null;
+  }
 
   const enabledConfigs =
     preloaded?.enabledConfigs ??
@@ -220,133 +449,119 @@ async function generateAndCacheStickers(
 
   if (!enabledConfigs.length) {
     logger.warn('No enabled sticker configurations found in Redis');
-    return [];
+    return null;
   }
 
   const endIndex = Math.min(offset + limit, enabledConfigs.length);
   if (offset >= endIndex) {
-    return [];
+    return null;
   }
 
-  const batchConfigs = enabledConfigs
-    .slice(offset, endIndex)
-    .map((c) => c.config);
   const cachedFileIds = preloaded?.cachedFileIds
-    ? preloaded.cachedFileIds.slice(offset, endIndex)
-    : await stickerCache.getBatch(normalizedText, batchConfigs);
+    ? preloaded.cachedFileIds
+    : await stickerCache.getBatch(
+        normalizedText,
+        enabledConfigs.map((c) => c.config),
+      );
 
   const totalItems = endIndex - offset;
-  const orderedResults: (InlineQueryResult | null)[] = new Array(
-    totalItems,
-  ).fill(null);
+  const job: StickerBatchJob = {
+    key,
+    normalizedText,
+    offset,
+    limit: totalItems,
+    totalEnabled: enabledConfigs.length,
+    results: new Array(totalItems).fill(null),
+    pendingCount: 0,
+    completed: false,
+    startedAt: Date.now(),
+    lastAccessAt: Date.now(),
+    waiters: new Set(),
+  };
   const tasks: StickerGenerationTask[] = [];
 
   for (let i = offset; i < endIndex; i++) {
     const { config: variant, id: configId } = enabledConfigs[i];
     const batchIndex = i - offset;
-    const fileId = cachedFileIds[batchIndex];
+    const fileId = cachedFileIds[i];
 
-    if (!fileId) {
-      cacheMissesTotal.inc({ cache_type: 'sticker' });
-      const taskId = crypto.randomBytes(8).toString('hex');
-      const task: StickerGenerationTask = {
-        id: taskId,
-        text: normalizedText,
-        variant,
-        configId,
-        index: i,
-      };
-
-      tasks.push(task);
-      logger.info(
-        `[${i + 1}/${enabledConfigs.length}] Queuing task for "${normalizedText}" (config: ${configId})...`,
-      );
-    } else {
+    if (fileId) {
       cacheHitsTotal.inc({ cache_type: 'sticker' });
-      orderedResults[batchIndex] = {
-        type: 'sticker',
-        id: configId,
-        sticker_file_id: fileId,
-      } as InlineQueryResultCachedSticker;
+      job.results[batchIndex] = buildCachedStickerResult(configId, fileId);
       logger.debug(
         `[${i + 1}/${enabledConfigs.length}] Using cached sticker for "${normalizedText}" (config: ${configId})`,
       );
+      continue;
     }
+
+    cacheMissesTotal.inc({ cache_type: 'sticker' });
+    const task: StickerGenerationTask = {
+      id: crypto.randomBytes(8).toString('hex'),
+      text: normalizedText,
+      variant,
+      configId,
+      index: i,
+    };
+
+    tasks.push(task);
+    logger.info(
+      `[${i + 1}/${enabledConfigs.length}] Queuing task for "${normalizedText}" (config: ${configId})...`,
+    );
   }
 
-  const resultPromises: Promise<void>[] = tasks.map((task) =>
-    (async () => {
-      try {
-        const result = await workerPool.submitTask(task);
-        const index = result.index;
+  job.pendingCount = tasks.length;
+  job.completed = tasks.length === 0;
+  activeStickerJobs.set(key, job);
+  cleanupActiveStickerJobs();
 
-        const animType = (task.variant as any).transform?.type || 'static';
+  for (const task of tasks) {
+    void processStickerGenerationTask(job, task);
+  }
 
-        if (result.success) {
-          const stickerBuffer = await resolveResultStickerBuffer(result);
+  notifyStickerBatchJob(job);
+  return job;
+}
 
-          if (stickerBuffer) {
-            const uploadedFileId = await uploadStickerToTelegram(
-              ctx,
-              stickerBuffer,
-            );
+async function processStickerGenerationTask(
+  job: StickerBatchJob,
+  task: StickerGenerationTask,
+): Promise<void> {
+  const animType = (task.variant as any).transform?.type || 'static';
 
-            if (uploadedFileId) {
-              await stickerCache.set(
-                normalizedText,
-                task.variant,
-                uploadedFileId,
-              );
+  try {
+    const result = await workerPool.submitTask(task);
+    const index = result.index;
 
-              stickerGenerationDuration.observe(
-                { animation_type: animType },
-                result.duration,
-              );
-              stickersGeneratedTotal.inc({
-                animation_type: animType,
-                status: 'success',
-              });
-              logStickerGeneration(
-                animType,
-                normalizedText,
-                true,
-                result.duration,
-              );
-              logger.info(`[${index + 1}/${enabledConfigs.length}] ✓ Success`);
+    if (result.success) {
+      const stickerBuffer = await resolveResultStickerBuffer(result);
 
-              const batchIndex = index - offset;
-              if (batchIndex >= 0 && batchIndex < orderedResults.length) {
-                orderedResults[batchIndex] = {
-                  type: 'sticker',
-                  id: task.configId,
-                  sticker_file_id: uploadedFileId,
-                } as InlineQueryResultCachedSticker;
-              }
-            } else {
-              stickersGeneratedTotal.inc({
-                animation_type: animType,
-                status: 'error',
-              });
-              errorsTotal.inc({ error_type: 'upload_failed' });
-              logger.error(
-                `[${index + 1}/${enabledConfigs.length}] ✗ Upload failed`,
-              );
-            }
-          } else {
-            stickersGeneratedTotal.inc({
-              animation_type: animType,
-              status: 'error',
-            });
-            errorsTotal.inc({ error_type: 'generation_error' });
-            logStickerGeneration(
-              animType,
-              normalizedText,
-              false,
-              result.duration,
-              'Empty sticker buffer',
-            );
-            logger.error(
-              `[${index + 1}/${enabledConfigs.length}] ✗ Failed: empty sticker buffer`,
+      if (stickerBuffer) {
+        const uploadedFileId = await uploadStickerToTelegram(stickerBuffer);
+
+        if (uploadedFileId) {
+          await stickerCache.set(job.normalizedText, task.variant, uploadedFileId);
+
+          stickerGenerationDuration.observe(
+            { animation_type: animType },
+            result.duration,
+          );
+          stickersGeneratedTotal.inc({
+            animation_type: animType,
+            status: 'success',
+          });
+          logStickerGeneration(
+            animType,
+            job.normalizedText,
+            true,
+            result.duration,
+          );
+          logger.info(`[${index + 1}/${job.totalEnabled}] ✓ Success`);
+
+          const batchIndex = index - job.offset;
+          if (batchIndex >= 0 && batchIndex < job.results.length) {
+            job.results[batchIndex] = buildCachedStickerResult(
+              task.configId,
+              uploadedFileId,
             );
           }
         } else {
@@ -354,39 +569,61 @@ async function generateAndCacheStickers(
             animation_type: animType,
             status: 'error',
           });
-          errorsTotal.inc({ error_type: 'generation_error' });
-          logStickerGeneration(
-            animType,
-            normalizedText,
-            false,
-            result.duration,
-            result.error,
-          );
-          logger.error(
-            `[${index + 1}/${enabledConfigs.length}] ✗ Failed: ${result.error}`,
-          );
+          errorsTotal.inc({ error_type: 'upload_failed' });
+          logger.error(`[${index + 1}/${job.totalEnabled}] ✗ Upload failed`);
         }
-      } catch (error) {
-        const index = task.index;
-        const animType = (task.variant as any).transform?.type || 'static';
+      } else {
         stickersGeneratedTotal.inc({
           animation_type: animType,
           status: 'error',
         });
-        errorsTotal.inc({ error_type: 'worker_error' });
+        errorsTotal.inc({ error_type: 'generation_error' });
+        logStickerGeneration(
+          animType,
+          job.normalizedText,
+          false,
+          result.duration,
+          'Empty sticker buffer',
+        );
         logger.error(
-          `[${index + 1}/${enabledConfigs.length}] ✗ Worker error:`,
-          error,
+          `[${index + 1}/${job.totalEnabled}] ✗ Failed: empty sticker buffer`,
         );
       }
-    })(),
-  );
-
-  await Promise.all(resultPromises);
-
-  return orderedResults.filter((result): result is InlineQueryResult =>
-    Boolean(result),
-  );
+    } else {
+      stickersGeneratedTotal.inc({
+        animation_type: animType,
+        status: 'error',
+      });
+      errorsTotal.inc({ error_type: 'generation_error' });
+      logStickerGeneration(
+        animType,
+        job.normalizedText,
+        false,
+        result.duration,
+        result.error,
+      );
+      logger.error(
+        `[${index + 1}/${job.totalEnabled}] ✗ Failed: ${result.error}`,
+      );
+    }
+  } catch (error) {
+    stickersGeneratedTotal.inc({
+      animation_type: animType,
+      status: 'error',
+    });
+    errorsTotal.inc({ error_type: 'worker_error' });
+    logger.error(
+      `[${task.index + 1}/${job.totalEnabled}] ✗ Worker error:`,
+      error,
+    );
+  } finally {
+    job.pendingCount--;
+    job.lastAccessAt = Date.now();
+    if (job.pendingCount <= 0) {
+      job.completed = true;
+    }
+    notifyStickerBatchJob(job);
+  }
 }
 
 // Inline query handler with pagination
@@ -446,8 +683,6 @@ bot.on('inline_query', async (ctx) => {
   }
 
   const userId = ctx.from.id.toString();
-  const STICKERS_PER_PAGE_CACHED = 20; // Return 20 stickers per page when cached
-  const STICKERS_PER_PAGE_GENERATE = 5; // Generate only N stickers per page
 
   // Load enabled configs count
   const enabledCount = await stickerConfigManager.getEnabledCount();
@@ -459,12 +694,6 @@ bot.on('inline_query', async (ctx) => {
     const duration = (Date.now() - queryStartTime) / 1000;
     logInlineQuery(query, ctx.from.id, true, duration);
     return;
-  }
-
-  // Clear existing debounce timer for this user
-  const existingTimer = debounceTimers.get(userId);
-  if (existingTimer) {
-    clearTimeout(existingTimer);
   }
 
   // Answer immediately with cached results if available from Redis
@@ -517,7 +746,7 @@ bot.on('inline_query', async (ctx) => {
 
   const cachedRange =
     buildCachedRangeResults(STICKERS_PER_PAGE_CACHED) ??
-    buildCachedRangeResults(STICKERS_PER_PAGE_GENERATE);
+    buildCachedRangeResults(STICKER_GENERATION_BATCH_SIZE);
 
   if (cachedRange && cachedRange.length > 0) {
     const nextOffset =
@@ -537,64 +766,76 @@ bot.on('inline_query', async (ctx) => {
     }
   }
 
-  // Set debounce timer for generation
-  const debounceDelay = await stickerConfigManager.getDebounceDelay();
-  const timer = setTimeout(async () => {
-    debounceTimers.delete(userId);
+  try {
+    logger.info(`Ensuring sticker batch for: "${query}" (offset: ${offset})`);
+    const job = await getOrCreateStickerBatchJob(
+      query,
+      offset,
+      STICKER_GENERATION_BATCH_SIZE,
+      { enabledConfigs, cachedFileIds: allCachedFileIds },
+    );
 
-    try {
-      logger.info(`Generating stickers for: "${query}" (offset: ${offset})`);
-      const results = await generateAndCacheStickers(
-        ctx,
-        query,
-        offset,
-        STICKERS_PER_PAGE_GENERATE,
-        { enabledConfigs, cachedFileIds: allCachedFileIds },
-      );
+    if (job) {
+      await waitForJobReadyResults(job, INLINE_FIRST_RESULT_WAIT_MS);
 
-      const processedCount = Math.min(
-        STICKERS_PER_PAGE_GENERATE,
-        totalEnabled - offset,
-      );
+      const results = getReadyJobResults(job);
       const nextOffset =
-        offset + processedCount < totalEnabled
-          ? (offset + processedCount).toString()
+        job.completed && offset + job.limit < totalEnabled
+          ? (offset + job.limit).toString()
           : '';
 
       await ctx.answerInlineQuery(results, {
-        // cache_time: 300, // Cache for 5 minutes
+        cache_time: 0,
         next_offset: nextOffset,
         is_personal: true,
       });
 
-      inlineQueriesTotal.inc({ status: 'success' });
+      inlineQueriesTotal.inc({ status: results.length > 0 ? 'success' : 'empty' });
       const duration = (Date.now() - queryStartTime) / 1000;
       logInlineQuery(query, ctx.from.id, true, duration);
-    } catch (error) {
-      inlineQueriesTotal.inc({ status: 'error' });
-      errorsTotal.inc({ error_type: 'inline_query_error' });
-      const duration = (Date.now() - queryStartTime) / 1000;
-      logInlineQuery(query, ctx.from.id, false, duration);
-      logError(error as Error, { context: 'inline_query', query, userId });
-      console.error('Error handling inline query:', error);
-      // Ignore "query is too old" errors - Telegram already closed the query
-      if (
-        error instanceof Error &&
-        error.message.includes('query is too old')
-      ) {
-        console.log('Query expired, ignoring...');
-      } else {
-        try {
-          await ctx.answerInlineQuery([], { cache_time: 0 });
-        } catch (answerError) {
-          // Ignore errors when answering already expired queries
-          console.log('Failed to answer query (likely expired)');
-        }
+      return;
+    }
+
+    const partialCachedResults = buildCachedPartialResults(
+      enabledConfigs,
+      allCachedFileIds,
+      offset,
+      STICKER_GENERATION_BATCH_SIZE,
+    );
+
+    await ctx.answerInlineQuery(partialCachedResults, {
+      cache_time: 0,
+      next_offset: '',
+      is_personal: true,
+    });
+
+    inlineQueriesTotal.inc({
+      status: partialCachedResults.length > 0 ? 'cached' : 'empty',
+    });
+    const duration = (Date.now() - queryStartTime) / 1000;
+    logInlineQuery(query, ctx.from.id, true, duration);
+  } catch (error) {
+    inlineQueriesTotal.inc({ status: 'error' });
+    errorsTotal.inc({ error_type: 'inline_query_error' });
+    const duration = (Date.now() - queryStartTime) / 1000;
+    logInlineQuery(query, ctx.from.id, false, duration);
+    logError(error as Error, { context: 'inline_query', query, userId });
+    console.error('Error handling inline query:', error);
+    // Ignore "query is too old" errors - Telegram already closed the query
+    if (
+      error instanceof Error &&
+      error.message.includes('query is too old')
+    ) {
+      console.log('Query expired, ignoring...');
+    } else {
+      try {
+        await ctx.answerInlineQuery([], { cache_time: 0 });
+      } catch (answerError) {
+        // Ignore errors when answering already expired queries
+        console.log('Failed to answer query (likely expired)');
       }
     }
-  }, debounceDelay);
-
-  debounceTimers.set(userId, timer);
+  }
 });
 
 // Track chosen inline results: stats, history, config scoring
