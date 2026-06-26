@@ -1,6 +1,7 @@
 import { Input, Telegraf } from 'telegraf';
 import { SerialUploadQueue } from './serial-upload-queue';
 import { logger } from './logger';
+import { toSafeErrorDetails } from './safe-error-log';
 
 type StickerUploadAttemptResult = {
     fileId: string | null;
@@ -10,6 +11,7 @@ type StickerUploadAttemptResult = {
 
 type WorkerEntry = {
     tokenId: string;
+    botId: string;
     bot: Telegraf;
     queue: SerialUploadQueue;
 };
@@ -64,6 +66,7 @@ export class WorkerBotPool {
             if (!existingIds.has(id)) {
                 this.workers.push({
                     tokenId: id,
+                    botId: token.split(':')[0],
                     bot: new Telegraf(token),
                     queue: new SerialUploadQueue(this.queueOpts),
                 });
@@ -124,14 +127,14 @@ export class WorkerBotPool {
             if (retryAfter !== null) {
                 worker.queue.setBotFloodWait(retryAfter);
                 logger.warn(
-                    `WorkerBotPool: worker ${worker.tokenId.slice(0, 8)} flood-waited for ${retryAfter}s`,
+                    `WorkerBotPool: worker ${worker.botId} flood-waited for ${retryAfter}s`,
                 );
                 return { fileId: null, retryable: false, rateLimited: true };
             }
 
             logger.error(
-                `WorkerBotPool: sendSticker failed for worker ${worker.tokenId.slice(0, 8)}`,
-                error,
+                `WorkerBotPool: sendSticker failed for worker ${worker.botId}`,
+                toSafeErrorDetails(error),
             );
             return { fileId: null, retryable: true };
         }
