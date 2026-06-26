@@ -40,6 +40,7 @@ import { getDataSource } from './db/data-source';
 import { UploadOwnerSelector } from './upload-owner-selector';
 import { toSafeErrorDetails } from './safe-error-log';
 import { BotFloodWaitError, SerialUploadQueue } from './serial-upload-queue';
+import { buildInlineNextOffset } from './inline-next-offset';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -779,10 +780,12 @@ bot.on('inline_query', async (ctx) => {
       await waitForJobReadyResults(job, INLINE_FIRST_RESULT_WAIT_MS);
 
       const results = getReadyJobResults(job);
-      const nextOffset =
-        job.completed && offset + job.limit < totalEnabled
-          ? (offset + job.limit).toString()
-          : '';
+      const nextOffset = buildInlineNextOffset({
+        currentOffset: offset,
+        batchSize: job.limit,
+        totalEnabled,
+        completed: job.completed,
+      });
 
       await ctx.answerInlineQuery(results, {
         cache_time: 0,
