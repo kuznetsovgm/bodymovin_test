@@ -184,13 +184,7 @@ async function uploadStickerToTelegram(
       const duration = (Date.now() - startTime) / 1000;
       const safeError = toSafeErrorDetails(error);
       errorsTotal.inc({ error_type: 'upload_error' });
-      logUpload(
-        '',
-        ownerId.toString(),
-        false,
-        duration,
-        safeError.message,
-      );
+      logUpload('', ownerId.toString(), false, duration, safeError.message);
       logger.error(`Failed to upload sticker for user ${ownerId}`, safeError);
     }
   }
@@ -453,7 +447,7 @@ bot.on('inline_query', async (ctx) => {
 
   const userId = ctx.from.id.toString();
   const STICKERS_PER_PAGE_CACHED = 20; // Return 20 stickers per page when cached
-  const STICKERS_PER_PAGE_GENERATE = 2; // Generate only N stickers per page
+  const STICKERS_PER_PAGE_GENERATE = 5; // Generate only N stickers per page
 
   // Load enabled configs count
   const enabledCount = await stickerConfigManager.getEnabledCount();
