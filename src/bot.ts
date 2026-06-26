@@ -38,6 +38,7 @@ import { UserService } from './db/user-service';
 import { createSaveUserMiddleware } from './db/user-middleware';
 import { getDataSource } from './db/data-source';
 import { UploadOwnerSelector } from './upload-owner-selector';
+import { toSafeErrorDetails } from './safe-error-log';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -181,15 +182,16 @@ async function uploadStickerToTelegram(
       );
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
+      const safeError = toSafeErrorDetails(error);
       errorsTotal.inc({ error_type: 'upload_error' });
       logUpload(
         '',
         ownerId.toString(),
         false,
         duration,
-        (error as Error).message,
+        safeError.message,
       );
-      logger.error(`Failed to upload sticker for user ${ownerId}:`, error);
+      logger.error(`Failed to upload sticker for user ${ownerId}`, safeError);
     }
   }
 
