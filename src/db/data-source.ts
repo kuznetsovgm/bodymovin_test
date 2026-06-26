@@ -1,8 +1,10 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { User } from './user.entity';
+import { WorkerBotToken } from './worker-bot-token.entity';
 import { logger } from '../logger';
 import { CreateUsers1700000000000 } from './migrations/1700000000000-CreateUsers';
+import { CreateWorkerBotTokens1751020000000 } from './migrations/1751020000000-CreateWorkerBotTokens';
 
 const PG_HOST = process.env.PG_HOST || 'localhost';
 const PG_PORT = parseInt(process.env.PG_PORT || '5432', 10);
@@ -18,10 +20,10 @@ export const dataSource = new DataSource({
     username: PG_USER,
     password: PG_PASSWORD,
     database: PG_DB,
-    entities: [User],
+    entities: [User, WorkerBotToken],
     synchronize: PG_SYNC,
     logging: false,
-    migrations: [CreateUsers1700000000000],
+    migrations: [CreateUsers1700000000000, CreateWorkerBotTokens1751020000000],
     migrationsRun: true,
 });
 

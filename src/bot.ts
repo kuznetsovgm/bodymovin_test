@@ -40,6 +40,8 @@ import { getDataSource } from './db/data-source';
 import { UploadOwnerSelector } from './upload-owner-selector';
 import { toSafeErrorDetails } from './safe-error-log';
 import { BotFloodWaitError, SerialUploadQueue } from './serial-upload-queue';
+import { WorkerBotPool } from './worker-bot-pool';
+import { WorkerBotTokenService } from './db/worker-bot-token-service';
 import {
   buildInlineNextOffset,
   getUndeliveredInlineResults,
@@ -55,6 +57,7 @@ if (!BOT_TOKEN) {
 const bot = new Telegraf(BOT_TOKEN);
 const userService = new UserService();
 const uploadOwnerSelector = new UploadOwnerSelector(userService);
+const workerBotTokenService = new WorkerBotTokenService();
 bot.use(createSaveUserMiddleware(userService));
 
 // Worker pool configuration
@@ -89,6 +92,14 @@ const telegramUploadQueue = new SerialUploadQueue({
   maxQueueSize: MAX_UPLOAD_QUEUE_SIZE,
   minIntervalMs: UPLOAD_MIN_INTERVAL_MS,
 });
+
+const WORKER_CHANNEL_ID = parseInt(process.env.WORKER_CHANNEL_ID || '0', 10) || null;
+const workerBotPool = WORKER_CHANNEL_ID
+  ? new WorkerBotPool(WORKER_CHANNEL_ID, {
+      maxQueueSize: MAX_UPLOAD_QUEUE_SIZE,
+      minIntervalMs: UPLOAD_MIN_INTERVAL_MS,
+    })
+  : null;
 
 async function resolveResultStickerBuffer(
   result: StickerGenerationResult,
@@ -205,6 +216,22 @@ function getTelegramRetryAfterSeconds(error: unknown): number | null {
 async function uploadStickerOnce(
   stickerBuffer: Buffer,
 ): Promise<StickerUploadAttemptResult> {
+  if (workerBotPool?.isAvailable()) {
+    const startTime = Date.now();
+    const result = await workerBotPool.sendStickerViaChannel(stickerBuffer);
+    const duration = (Date.now() - startTime) / 1000;
+    if (result.fileId) {
+      uploadDuration.observe(duration);
+      logUpload(result.fileId, 'worker_pool', true, duration);
+    } else {
+      logUpload('', 'worker_pool', false, duration, result.rateLimited ? 'rate_limited' : 'failed');
+      if (result.rateLimited) {
+        errorsTotal.inc({ error_type: 'upload_rate_limited' });
+      }
+    }
+    return result;
+  }
+
   const ownerId = await uploadOwnerSelector.getNextOwnerId();
 
   if (!ownerId) {
@@ -1215,6 +1242,126 @@ bot.command('set_debounce_delay', async (ctx) => {
   }
 });
 
+// Admin commands: Worker bot pool management
+
+async function reloadWorkerBotPool(): Promise<void> {
+  if (!workerBotPool) return;
+  const tokens = await workerBotTokenService.getActiveTokensWithIds();
+  workerBotPool.reload(tokens);
+}
+
+bot.command('add_worker_bot', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.reply('❌ You are not authorized to use this command.');
+    return;
+  }
+
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    await ctx.reply('Usage: /add_worker_bot <token>');
+    return;
+  }
+
+  const token = args[1].trim();
+  try {
+    const entry = await workerBotTokenService.addToken(token);
+    await reloadWorkerBotPool();
+    const masked = token.slice(0, 10) + '...';
+    await ctx.reply(
+      `✅ Worker bot added.\nID: \`${entry.id}\`\nToken: \`${masked}\`\nPool size: ${workerBotPool?.workerCount() ?? 0}`,
+      { parse_mode: 'Markdown' },
+    );
+  } catch (error) {
+    logger.error('Error adding worker bot token', error);
+    await ctx.reply('❌ Error adding worker bot (token may already exist).');
+  }
+});
+
+bot.command('list_worker_bots', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.reply('❌ You are not authorized to use this command.');
+    return;
+  }
+
+  try {
+    const tokens = await workerBotTokenService.listAll();
+    if (tokens.length === 0) {
+      await ctx.reply(
+        'No worker bots configured.\n\nUse /add_worker_bot <token> to add one.\n' +
+          (WORKER_CHANNEL_ID ? `Channel: \`${WORKER_CHANNEL_ID}\`` : '⚠️ WORKER_CHANNEL_ID not set'),
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    const lines = tokens.map((t) => {
+      const masked = t.token.slice(0, 10) + '...';
+      const status = t.status === 'active' ? '✅' : '❌';
+      return `${status} \`${t.id.slice(0, 8)}\` ${masked} (${t.status})`;
+    });
+
+    await ctx.reply(
+      `*Worker bots* (${tokens.length} total, pool: ${workerBotPool?.workerCount() ?? 0} active)\n` +
+        (WORKER_CHANNEL_ID ? `Channel: \`${WORKER_CHANNEL_ID}\`\n` : '⚠️ WORKER_CHANNEL_ID not set\n') +
+        '\n' + lines.join('\n'),
+      { parse_mode: 'Markdown' },
+    );
+  } catch (error) {
+    logger.error('Error listing worker bots', error);
+    await ctx.reply('❌ Error listing worker bots.');
+  }
+});
+
+bot.command('enable_worker_bot', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.reply('❌ You are not authorized to use this command.');
+    return;
+  }
+
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    await ctx.reply('Usage: /enable_worker_bot <id>\n\nUse /list_worker_bots to see IDs.');
+    return;
+  }
+
+  const id = args[1].trim();
+  try {
+    await workerBotTokenService.setStatus(id, 'active');
+    await reloadWorkerBotPool();
+    await ctx.reply(`✅ Worker bot \`${id.slice(0, 8)}\` enabled. Pool size: ${workerBotPool?.workerCount() ?? 0}`, {
+      parse_mode: 'Markdown',
+    });
+  } catch (error) {
+    logger.error('Error enabling worker bot', error);
+    await ctx.reply('❌ Error enabling worker bot.');
+  }
+});
+
+bot.command('disable_worker_bot', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.reply('❌ You are not authorized to use this command.');
+    return;
+  }
+
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) {
+    await ctx.reply('Usage: /disable_worker_bot <id>\n\nUse /list_worker_bots to see IDs.');
+    return;
+  }
+
+  const id = args[1].trim();
+  try {
+    await workerBotTokenService.setStatus(id, 'inactive');
+    await reloadWorkerBotPool();
+    await ctx.reply(`✅ Worker bot \`${id.slice(0, 8)}\` disabled. Pool size: ${workerBotPool?.workerCount() ?? 0}`, {
+      parse_mode: 'Markdown',
+    });
+  } catch (error) {
+    logger.error('Error disabling worker bot', error);
+    await ctx.reply('❌ Error disabling worker bot.');
+  }
+});
+
 // Monitor Redis connection status
 stickerCache.getRedis().on('connect', () => {
   redisConnectionStatus.set(1);
@@ -1244,6 +1391,12 @@ stickerCache.getRedis().on('close', () => {
     });
     await workerPool.initialize();
     logger.info('Worker pool initialized successfully');
+
+    if (workerBotPool) {
+      const tokens = await workerBotTokenService.getActiveTokensWithIds();
+      workerBotPool.reload(tokens);
+      logger.info(`Worker bot pool initialized: ${tokens.length} token(s) loaded`);
+    }
 
     bot.launch();
 
