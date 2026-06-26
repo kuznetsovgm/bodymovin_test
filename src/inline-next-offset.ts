@@ -5,6 +5,11 @@ export type InlineNextOffsetInput = {
   completed: boolean;
 };
 
+export type InlineBatchAnswerInput = {
+  readyCount: number;
+  completed: boolean;
+};
+
 export function buildInlineNextOffset({
   currentOffset,
   batchSize,
@@ -17,4 +22,11 @@ export function buildInlineNextOffset({
 
   const nextOffset = currentOffset + batchSize;
   return nextOffset < totalEnabled ? nextOffset.toString() : '';
+}
+
+export function shouldAnswerInlineBatch({
+  readyCount,
+  completed,
+}: InlineBatchAnswerInput): boolean {
+  return readyCount > 0 || completed;
 }

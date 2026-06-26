@@ -1,5 +1,8 @@
 import assert from 'node:assert';
-import { buildInlineNextOffset } from './inline-next-offset';
+import {
+  buildInlineNextOffset,
+  shouldAnswerInlineBatch,
+} from './inline-next-offset';
 
 // While a generation batch is still running, keep Telegram polling the same batch.
 (() => {
@@ -47,4 +50,28 @@ import { buildInlineNextOffset } from './inline-next-offset';
   });
 
   assert.equal(nextOffset, '');
+})();
+
+// Empty incomplete batches should not be sent to Telegram as empty results.
+(() => {
+  assert.equal(
+    shouldAnswerInlineBatch({ readyCount: 0, completed: false }),
+    false,
+  );
+})();
+
+// A batch with at least one ready result can be sent and keep polling via next_offset.
+(() => {
+  assert.equal(
+    shouldAnswerInlineBatch({ readyCount: 1, completed: false }),
+    true,
+  );
+})();
+
+// A completed empty batch can be answered to stop the client from waiting forever.
+(() => {
+  assert.equal(
+    shouldAnswerInlineBatch({ readyCount: 0, completed: true }),
+    true,
+  );
 })();

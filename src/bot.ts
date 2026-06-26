@@ -40,7 +40,10 @@ import { getDataSource } from './db/data-source';
 import { UploadOwnerSelector } from './upload-owner-selector';
 import { toSafeErrorDetails } from './safe-error-log';
 import { BotFloodWaitError, SerialUploadQueue } from './serial-upload-queue';
-import { buildInlineNextOffset } from './inline-next-offset';
+import {
+  buildInlineNextOffset,
+  shouldAnswerInlineBatch,
+} from './inline-next-offset';
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 if (!BOT_TOKEN) {
@@ -780,6 +783,20 @@ bot.on('inline_query', async (ctx) => {
       await waitForJobReadyResults(job, INLINE_FIRST_RESULT_WAIT_MS);
 
       const results = getReadyJobResults(job);
+      if (
+        !shouldAnswerInlineBatch({
+          readyCount: results.length,
+          completed: job.completed,
+        })
+      ) {
+        inlineQueriesTotal.inc({ status: 'pending' });
+        const duration = (Date.now() - queryStartTime) / 1000;
+        logger.info(
+          `Inline query left unanswered while waiting for first sticker: query="${query}", offset=${offset}, duration=${duration}s`,
+        );
+        return;
+      }
+
       const nextOffset = buildInlineNextOffset({
         currentOffset: offset,
         batchSize: job.limit,
